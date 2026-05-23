@@ -16,6 +16,20 @@ const _adminSurface = Color(0xFFF5F8FA);
 const _adminMuted = Color(0xFF607783);
 const _adminLine = Color(0xFFDCE8EC);
 
+String _initials(String value) {
+  final parts = value
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return 'NA';
+  return parts
+      .take(2)
+      .map((part) => part.characters.first)
+      .join()
+      .toUpperCase();
+}
+
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
 
@@ -53,10 +67,26 @@ class AdminDashboardScreen extends StatelessWidget {
         onCreateStaff: () =>
             openScreen(context, const AdminCreateStaffScreen()),
         onScheduler: () => openScreen(context, const AdminRosteringScreen()),
+        onFacilities: () => openScreen(context, const AdminFacilitiesScreen()),
         onStaff: () => openScreen(context, const AdminStaffDirectoryScreen()),
         onClients: () =>
             openScreen(context, const AdminResidentOnboardingScreen()),
         onTasks: () => openScreen(context, const AdminTaskManagementScreen()),
+        onTimesheets: () => openScreen(
+          context,
+          AdminCheckInsScreen(
+            title: 'Timesheet review',
+            checkIns: controller.checkIns,
+          ),
+        ),
+        onInvoices: () => openScreen(context, const AdminInvoicesScreen()),
+        onIncidents: () => openScreen(
+          context,
+          AdminFilteredReportsScreen(
+            title: 'Incident reports',
+            reports: incidentReports,
+          ),
+        ),
         onReports: () => openScreen(
           context,
           AdminFilteredReportsScreen(
@@ -93,21 +123,6 @@ class AdminDashboardScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
               children: [
-                _AdminSchedulerBoard(
-                  activeStaff: activeCheckIns,
-                  actionRequired: actionRequired,
-                  onVacantShift: () =>
-                      openScreen(context, const AdminRosteringScreen()),
-                  onAssignStaff: () =>
-                      openScreen(context, const AdminAssignShiftScreen()),
-                  onStaffDirectory: () =>
-                      openScreen(context, const AdminStaffDirectoryScreen()),
-                  onClientList: () => openScreen(
-                    context,
-                    const AdminResidentOnboardingScreen(),
-                  ),
-                ),
-                const SizedBox(height: 18),
                 _AdminDashboardHeader(
                   activeStaff: activeCheckIns,
                   actionRequired: actionRequired,
@@ -141,6 +156,14 @@ class AdminDashboardScreen extends StatelessWidget {
                           openScreen(context, const AdminRosteringScreen()),
                     ),
                     _AdminWorkflowCard(
+                      icon: Icons.apartment_outlined,
+                      title: 'Facilities',
+                      subtitle: 'Manage SIL accommodation and service sites.',
+                      color: const Color(0xFF7357C8),
+                      onTap: () =>
+                          openScreen(context, const AdminFacilitiesScreen()),
+                    ),
+                    _AdminWorkflowCard(
                       icon: Icons.manage_accounts_outlined,
                       title: 'Staff directory',
                       subtitle: 'Review active staff and remove access.',
@@ -152,8 +175,8 @@ class AdminDashboardScreen extends StatelessWidget {
                     ),
                     _AdminWorkflowCard(
                       icon: Icons.elderly_outlined,
-                      title: 'Onboard client',
-                      subtitle: 'Create a new resident support profile.',
+                      title: 'Clients',
+                      subtitle: 'View residents and onboard new profiles.',
                       color: const Color(0xFF1B9B73),
                       onTap: () => openScreen(
                         context,
@@ -288,17 +311,25 @@ class _AdminPortalDrawer extends StatelessWidget {
   const _AdminPortalDrawer({
     required this.onCreateStaff,
     required this.onScheduler,
+    required this.onFacilities,
     required this.onStaff,
     required this.onClients,
     required this.onTasks,
+    required this.onTimesheets,
+    required this.onInvoices,
+    required this.onIncidents,
     required this.onReports,
   });
 
   final VoidCallback onCreateStaff;
   final VoidCallback onScheduler;
+  final VoidCallback onFacilities;
   final VoidCallback onStaff;
   final VoidCallback onClients;
   final VoidCallback onTasks;
+  final VoidCallback onTimesheets;
+  final VoidCallback onInvoices;
+  final VoidCallback onIncidents;
   final VoidCallback onReports;
 
   @override
@@ -306,12 +337,6 @@ class _AdminPortalDrawer extends StatelessWidget {
     void closeAndRun(VoidCallback action) {
       Navigator.pop(context);
       action();
-    }
-
-    void closeAndSnack(String message) {
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context);
-      messenger.showSnackBar(SnackBar(content: Text(message)));
     }
 
     return Drawer(
@@ -343,7 +368,7 @@ class _AdminPortalDrawer extends StatelessWidget {
                   _AdminDrawerItem(
                     icon: Icons.apartment_outlined,
                     label: 'Facilities',
-                    onTap: () => closeAndSnack('Facilities opened.'),
+                    onTap: () => closeAndRun(onFacilities),
                   ),
                   _AdminDrawerItem(
                     icon: Icons.badge_outlined,
@@ -358,7 +383,7 @@ class _AdminPortalDrawer extends StatelessWidget {
                   _AdminDrawerItem(
                     icon: Icons.access_time_outlined,
                     label: 'Timesheet',
-                    onTap: () => closeAndSnack('Timesheet review opened.'),
+                    onTap: () => closeAndRun(onTimesheets),
                   ),
                   _AdminDrawerItem(
                     icon: Icons.task_alt_outlined,
@@ -368,7 +393,7 @@ class _AdminPortalDrawer extends StatelessWidget {
                   _AdminDrawerItem(
                     icon: Icons.receipt_long_outlined,
                     label: 'Invoices',
-                    onTap: () => closeAndSnack('Invoice queue opened.'),
+                    onTap: () => closeAndRun(onInvoices),
                   ),
                   _AdminDrawerItem(
                     icon: Icons.assignment_outlined,
@@ -378,7 +403,7 @@ class _AdminPortalDrawer extends StatelessWidget {
                   _AdminDrawerItem(
                     icon: Icons.report_problem_outlined,
                     label: 'Incidents',
-                    onTap: () => closeAndRun(onReports),
+                    onTap: () => closeAndRun(onIncidents),
                   ),
                   _AdminDrawerItem(
                     icon: Icons.analytics_outlined,
@@ -462,18 +487,20 @@ class _AdminSchedulerBoard extends StatelessWidget {
   const _AdminSchedulerBoard({
     required this.activeStaff,
     required this.actionRequired,
+    required this.shifts,
     required this.onVacantShift,
     required this.onAssignStaff,
-    required this.onStaffDirectory,
     required this.onClientList,
+    required this.onRefresh,
   });
 
   final int activeStaff;
   final int actionRequired;
+  final List<_AdminRosterShift> shifts;
   final VoidCallback onVacantShift;
   final VoidCallback onAssignStaff;
-  final VoidCallback onStaffDirectory;
   final VoidCallback onClientList;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -513,8 +540,8 @@ class _AdminSchedulerBoard extends StatelessWidget {
                 ),
                 const Spacer(),
                 _SchedulerIconButton(
-                  icon: Icons.search_rounded,
-                  onTap: () => showSnack(context, 'Search roster opened.'),
+                  icon: Icons.refresh_rounded,
+                  onTap: onRefresh,
                 ),
                 const SizedBox(width: 8),
                 _SchedulerIconButton(
@@ -575,46 +602,34 @@ class _AdminSchedulerBoard extends StatelessWidget {
               }).toList(),
             ),
           ),
-          _RosterScheduleRow(
-            avatar: 'VS',
-            name: 'Vacant Shift',
-            time: '4am - 7am',
-            client: 'Steven Bradbury',
-            service: 'Morning support',
-            statusColor: const Color(0xFFC43D32),
-            cardColor: const Color(0xFFFFF1F1),
-            onTap: onVacantShift,
-          ),
-          _RosterScheduleRow(
-            avatar: 'CT',
-            name: 'Cathy',
-            time: '9am - 12pm',
-            client: 'Shane Jacobson',
-            service: 'Domestic assistance',
-            statusColor: const Color(0xFF1B9B73),
-            cardColor: const Color(0xFFE8F8EF),
-            onTap: onAssignStaff,
-          ),
-          _RosterScheduleRow(
-            avatar: 'JL',
-            name: 'Jolene',
-            time: '4pm - 7pm',
-            client: 'John Smith',
-            service: 'Community participation',
-            statusColor: const Color(0xFF1B9B73),
-            cardColor: const Color(0xFFE8F8EF),
-            onTap: onStaffDirectory,
-          ),
-          _RosterScheduleRow(
-            avatar: 'LY',
-            name: 'Lyla',
-            time: '9am - 6pm',
-            client: 'Sophie Baxter',
-            service: 'SIL afternoon',
-            statusColor: const Color(0xFF2868D9),
-            cardColor: const Color(0xFFEAF1FF),
-            onTap: onAssignStaff,
-          ),
+          if (shifts.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: EmptyState(
+                icon: Icons.event_busy_outlined,
+                message: 'No shifts have been scheduled yet.',
+              ),
+            )
+          else
+            ...shifts.map((shift) {
+              final open = shift.staffName == 'Unassigned';
+              final statusColor = open
+                  ? const Color(0xFFC43D32)
+                  : shift.status == 'Ended'
+                  ? const Color(0xFF7C8790)
+                  : const Color(0xFF1B9B73);
+              return _RosterScheduleRow(
+                avatar: _initials(open ? 'Open' : shift.staffName),
+                name: open ? 'Vacant Shift' : shift.staffName,
+                time:
+                    '${DateFormat.jm().format(shift.startTime)} - ${DateFormat.jm().format(shift.endTime)}',
+                client: shift.clientName,
+                service: '${shift.status} • ${shift.location}',
+                statusColor: statusColor,
+                cardColor: statusColor.withValues(alpha: 0.1),
+                onTap: open ? onVacantShift : onAssignStaff,
+              );
+            }),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
             child: Row(
@@ -1274,12 +1289,159 @@ class _AdminWorkflowCard extends StatelessWidget {
   }
 }
 
-class AdminRosteringScreen extends StatelessWidget {
+class AdminFacilitiesScreen extends StatelessWidget {
+  const AdminFacilitiesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Facilities',
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SIL accommodations',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: _adminNavy,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Supported Independent Living locations managed by the service.',
+                    style: TextStyle(
+                      color: _adminMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _FacilityCard(
+            name: 'Harbourview SIL Accommodation',
+            address: 'Sydney NSW',
+            beds: '4 rooms',
+            coverage: '24/7 support roster',
+            status: 'Active',
+            color: const Color(0xFF1B9B73),
+          ),
+          const SizedBox(height: 12),
+          _FacilityCard(
+            name: 'Gordon Community SIL',
+            address: 'Gordon ACT 2906',
+            beds: '3 rooms',
+            coverage: 'Afternoon and sleepover support',
+            status: 'Onboarding',
+            color: const Color(0xFFD37A18),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () => showSnack(context, 'Facility profile opened.'),
+            icon: const Icon(Icons.apartment_outlined),
+            label: const Text('Manage accommodation profiles'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FacilityCard extends StatelessWidget {
+  const _FacilityCard({
+    required this.name,
+    required this.address,
+    required this.beds,
+    required this.coverage,
+    required this.status,
+    required this.color,
+  });
+
+  final String name;
+  final String address;
+  final String beds;
+  final String coverage;
+  final String status;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return InfoCard(
+      icon: Icons.home_work_outlined,
+      title: name,
+      subtitle: '$address\n$beds • $coverage',
+      badge: StatusBadge(label: status, color: color),
+      onTap: () => showSnack(context, '$name selected.'),
+    );
+  }
+}
+
+class AdminRosteringScreen extends StatefulWidget {
   const AdminRosteringScreen({super.key});
+
+  @override
+  State<AdminRosteringScreen> createState() => _AdminRosteringScreenState();
+}
+
+class _AdminRosteringScreenState extends State<AdminRosteringScreen> {
+  late Future<List<_AdminRosterShift>> shiftsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    shiftsFuture = _loadRosterShifts();
+  }
+
+  Future<List<_AdminRosterShift>> _loadRosterShifts() async {
+    final firestore = FirebaseFirestore.instance;
+    final snapshot = await firestore.collection('shifts').limit(50).get();
+    final shifts = await Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = doc.data();
+        final staffId = data['staffId'] as String? ?? '';
+        final clientId = data['clientId'] as String? ?? '';
+        return _AdminRosterShift(
+          id: doc.id,
+          staffName:
+              await _nameFor(firestore, 'users', staffId) ?? 'Unassigned',
+          clientName:
+              await _nameFor(firestore, 'clients', clientId) ?? 'Resident',
+          startTime: dateFromFirestore(data['startTime']) ?? DateTime.now(),
+          endTime:
+              dateFromFirestore(data['endTime']) ??
+              DateTime.now().add(const Duration(hours: 1)),
+          location: data['serviceLocation'] as String? ?? 'Service location',
+          status: data['shiftStatus'] as String? ?? 'Scheduled',
+        );
+      }),
+    );
+    shifts.sort((a, b) => a.startTime.compareTo(b.startTime));
+    return shifts;
+  }
+
+  Future<String?> _nameFor(
+    FirebaseFirestore firestore,
+    String collection,
+    String id,
+  ) async {
+    if (id.isEmpty) return null;
+    final doc = await firestore.collection(collection).doc(id).get();
+    return doc.data()?['fullName'] as String?;
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
+    final activeStaff = controller.checkIns
+        .where((record) => record.status == 'Verified')
+        .length;
     final reportsNeedingAction = controller.reports
         .where((report) => report.status == ReportStatus.actionRequired)
         .length;
@@ -1290,31 +1452,63 @@ class AdminRosteringScreen extends StatelessWidget {
         children: [
           _AdminRosterSummary(actionRequired: reportsNeedingAction),
           const SizedBox(height: 12),
-          _RosterAssignmentCard(
-            title: 'Personal care visit',
-            time: '7:00 AM - 3:00 PM',
-            staff: 'Mia Thompson',
-            client: 'Avery Nguyen',
-            location: 'Harbourview Supported Living, Suite 12',
-            status: 'Assigned',
-            onPressed: () =>
-                showSnack(context, 'Roster assignment marked for review.'),
-          ),
-          const SizedBox(height: 12),
-          _RosterAssignmentCard(
-            title: 'Evening SIL support',
-            time: '3:00 PM - 10:00 PM',
-            staff: 'Unassigned',
-            client: 'Jamie Marsh',
-            location: '143 Knoke Ave, Gordon ACT 2906',
-            status: 'Open',
+          FilledButton.icon(
             onPressed: () =>
                 openScreen(context, const AdminAssignShiftScreen()),
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            label: const Text('Assign staff to shift'),
+          ),
+          const SizedBox(height: 12),
+          FutureBuilder<List<_AdminRosterShift>>(
+            future: shiftsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              return _AdminSchedulerBoard(
+                activeStaff: activeStaff,
+                actionRequired: reportsNeedingAction,
+                shifts: snapshot.data ?? [],
+                onVacantShift: () =>
+                    openScreen(context, const AdminAssignShiftScreen()),
+                onAssignStaff: () =>
+                    openScreen(context, const AdminAssignShiftScreen()),
+                onClientList: () =>
+                    openScreen(context, const AdminResidentOnboardingScreen()),
+                onRefresh: () =>
+                    setState(() => shiftsFuture = _loadRosterShifts()),
+              );
+            },
           ),
         ],
       ),
     );
   }
+}
+
+class _AdminRosterShift {
+  const _AdminRosterShift({
+    required this.id,
+    required this.staffName,
+    required this.clientName,
+    required this.startTime,
+    required this.endTime,
+    required this.location,
+    required this.status,
+  });
+
+  final String id;
+  final String staffName;
+  final String clientName;
+  final DateTime startTime;
+  final DateTime endTime;
+  final String location;
+  final String status;
 }
 
 class _AdminRosterSummary extends StatelessWidget {
@@ -1342,7 +1536,7 @@ class _AdminRosterSummary extends StatelessWidget {
               runSpacing: 10,
               children: [
                 const StatusBadge(
-                  label: '2 assigned visits',
+                  label: 'Admin managed shifts',
                   color: Color(0xFF1B9B73),
                 ),
                 StatusBadge(
@@ -1352,7 +1546,7 @@ class _AdminRosterSummary extends StatelessWidget {
                       : const Color(0xFF327A60),
                 ),
                 const StatusBadge(
-                  label: '1 open shift',
+                  label: 'No automatic schedules',
                   color: Color(0xFFF1A73A),
                 ),
               ],
@@ -1360,41 +1554,6 @@ class _AdminRosterSummary extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _RosterAssignmentCard extends StatelessWidget {
-  const _RosterAssignmentCard({
-    required this.title,
-    required this.time,
-    required this.staff,
-    required this.client,
-    required this.location,
-    required this.status,
-    required this.onPressed,
-  });
-
-  final String title;
-  final String time;
-  final String staff;
-  final String client;
-  final String location;
-  final String status;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final open = status == 'Open';
-    return InfoCard(
-      icon: open ? Icons.person_add_alt_1_outlined : Icons.event_available,
-      title: '$title • $time',
-      subtitle: 'Staff: $staff\nClient: $client\n$location',
-      badge: StatusBadge(
-        label: status,
-        color: open ? const Color(0xFFF1A73A) : const Color(0xFF1B9B73),
-      ),
-      onTap: onPressed,
     );
   }
 }
@@ -1408,16 +1567,12 @@ class AdminAssignShiftScreen extends StatefulWidget {
 
 class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
   final formKey = GlobalKey<FormState>();
-  final staffEmailController = TextEditingController(
-    text: 'staffmarmik@caresnap.com',
-  );
-  final clientNameController = TextEditingController(text: 'Jamie Marsh');
-  final dateController = TextEditingController(text: '2026-05-24');
-  final startController = TextEditingController(text: '15:00');
-  final endController = TextEditingController(text: '22:00');
-  final locationController = TextEditingController(
-    text: '143 Knoke Ave, Gordon ACT 2906, Australia',
-  );
+  final staffEmailController = TextEditingController();
+  final clientNameController = TextEditingController();
+  final dateController = TextEditingController();
+  final startController = TextEditingController();
+  final endController = TextEditingController();
+  final locationController = TextEditingController();
   bool isSaving = false;
 
   @override
@@ -1863,32 +2018,79 @@ class _AdminShiftOption {
   final String location;
 }
 
-class AdminStaffDirectoryScreen extends StatelessWidget {
+class AdminStaffDirectoryScreen extends StatefulWidget {
   const AdminStaffDirectoryScreen({super.key});
+
+  @override
+  State<AdminStaffDirectoryScreen> createState() =>
+      _AdminStaffDirectoryScreenState();
+}
+
+class _AdminStaffDirectoryScreenState extends State<AdminStaffDirectoryScreen> {
+  late Future<List<AppUser>> staffFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    staffFuture = _loadStaff();
+  }
+
+  Future<List<AppUser>> _loadStaff() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .where('role', isEqualTo: 'staff')
+        .limit(50)
+        .get();
+    final staff =
+        snapshot.docs
+            .map((doc) => AppUser.fromFirestore(doc.id, doc.data()))
+            .toList()
+          ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    return staff;
+  }
+
+  Future<void> removeAccess(AppUser staff) async {
+    await FirebaseFirestore.instance.collection('users').doc(staff.id).update({
+      'isActive': false,
+    });
+    if (!mounted) return;
+    showSnack(context, '${staff.fullName} access removed.');
+    setState(() => staffFuture = _loadStaff());
+  }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'Staff directory',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _StaffDirectoryCard(
-            name: 'Mia Thompson',
-            email: 'staff@caresnap.test',
-            role: 'Disability Support Worker',
-            active: true,
-            onRemove: () => showSnack(context, 'Staff access removal queued.'),
-          ),
-          const SizedBox(height: 12),
-          _StaffDirectoryCard(
-            name: 'Marmik Karki',
-            email: 'staffmarmik@caresnap.com',
-            role: 'Support Worker',
-            active: true,
-            onRemove: () => showSnack(context, 'Staff access removal queued.'),
-          ),
-        ],
+      body: FutureBuilder<List<AppUser>>(
+        future: staffFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final staff = snapshot.data ?? [];
+          if (staff.isEmpty) {
+            return const EmptyState(
+              icon: Icons.badge_outlined,
+              message: 'No staff accounts have been created yet.',
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: staff.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final person = staff[index];
+              return _StaffDirectoryCard(
+                name: person.fullName,
+                email: person.email,
+                role: person.position,
+                active: person.isActive,
+                onRemove: person.isActive ? () => removeAccess(person) : null,
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1900,14 +2102,14 @@ class _StaffDirectoryCard extends StatelessWidget {
     required this.email,
     required this.role,
     required this.active,
-    required this.onRemove,
+    this.onRemove,
   });
 
   final String name;
   final String email;
   final String role;
   final bool active;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -1989,6 +2191,14 @@ class _AdminResidentOnboardingScreenState
   final addressController = TextEditingController();
   final careNeedsController = TextEditingController();
   final emergencyContactController = TextEditingController();
+  late Future<List<ClientProfile>> clientsFuture;
+  String? selectedClientId;
+
+  @override
+  void initState() {
+    super.initState();
+    clientsFuture = _loadClients();
+  }
 
   @override
   void dispose() {
@@ -2004,7 +2214,7 @@ class _AdminResidentOnboardingScreenState
     if (!formKey.currentState!.validate()) return;
     final name = nameController.text.trim();
     try {
-      await FirebaseFirestore.instance.collection('clients').add({
+      final doc = await FirebaseFirestore.instance.collection('clients').add({
         'fullName': name,
         'roomNumber': suiteController.text.trim(),
         'address': addressController.text.trim(),
@@ -2017,31 +2227,103 @@ class _AdminResidentOnboardingScreenState
       });
       if (!mounted) return;
       showSnack(context, '$name has been added to client profiles.');
-      Navigator.pop(context);
+      nameController.clear();
+      suiteController.clear();
+      addressController.clear();
+      careNeedsController.clear();
+      emergencyContactController.clear();
+      setState(() {
+        selectedClientId = doc.id;
+        clientsFuture = _loadClients();
+      });
     } catch (_) {
       if (!mounted) return;
       showSnack(context, '$name has been staged for coordinator review.');
-      Navigator.pop(context);
     }
+  }
+
+  Future<List<ClientProfile>> _loadClients() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('clients')
+        .limit(50)
+        .get();
+    final clients =
+        snapshot.docs
+            .map((doc) => ClientProfile.fromFirestore(doc.id, doc.data()))
+            .toList()
+          ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    if (selectedClientId == null && clients.isNotEmpty) {
+      selectedClientId = clients.first.id;
+    }
+    return clients;
   }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      title: 'Onboard client',
-      body: Form(
-        key: formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
+      title: 'Clients',
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          FutureBuilder<List<ClientProfile>>(
+            future: clientsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
+              final clients = snapshot.data ?? [];
+              if (clients.isEmpty) {
+                return const EmptyState(
+                  icon: Icons.groups_2_outlined,
+                  message: 'No residents have been onboarded yet.',
+                );
+              }
+              final selectedClient = clients.firstWhere(
+                (client) => client.id == selectedClientId,
+                orElse: () => clients.first,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedClient.id,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.person_search_outlined),
+                      labelText: 'Pick resident',
+                    ),
+                    items: clients
+                        .map(
+                          (client) => DropdownMenuItem(
+                            value: client.id,
+                            child: Text(client.fullName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => selectedClientId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  _ClientDetailsCard(client: selectedClient),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 18),
+          Form(
+            key: formKey,
+            child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Resident support profile',
+                      'Onboard new resident',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
@@ -2077,15 +2359,96 @@ class _AdminResidentOnboardingScreenState
                       label: 'Emergency contact',
                       icon: Icons.call_outlined,
                     ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: submit,
+                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                      label: const Text('Add resident'),
+                    ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: submit,
-              icon: const Icon(Icons.person_add_alt_1_outlined),
-              label: const Text('Add client profile'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClientDetailsCard extends StatelessWidget {
+  const _ClientDetailsCard({required this.client});
+
+  final ClientProfile client;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: const Color(0xFFE6F3F5),
+                  child: Text(
+                    _initials(client.fullName),
+                    style: const TextStyle(
+                      color: _adminNavy,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    client.fullName,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: _adminNavy,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const StatusBadge(label: 'Resident', color: _adminNavy),
+              ],
+            ),
+            const SizedBox(height: 14),
+            MetricLine(
+              icon: Icons.meeting_room_outlined,
+              label: 'Room or suite',
+              value: client.roomNumber,
+            ),
+            MetricLine(
+              icon: Icons.location_on_outlined,
+              label: 'Address',
+              value: client.address,
+            ),
+            MetricLine(
+              icon: Icons.volunteer_activism_outlined,
+              label: 'Care needs',
+              value: client.careNeeds,
+            ),
+            MetricLine(
+              icon: Icons.accessible_forward_outlined,
+              label: 'Mobility',
+              value: client.mobilityStatus,
+            ),
+            MetricLine(
+              icon: Icons.record_voice_over_outlined,
+              label: 'Communication',
+              value: client.communicationNeeds,
+            ),
+            MetricLine(
+              icon: Icons.priority_high_outlined,
+              label: 'Risk notes',
+              value: client.riskNotes,
+            ),
+            MetricLine(
+              icon: Icons.call_outlined,
+              label: 'Emergency contact',
+              value: client.emergencyContact,
             ),
           ],
         ),
@@ -2178,6 +2541,27 @@ class AdminCheckInsScreen extends StatelessWidget {
             badge: const StatusBadge(label: 'Active', color: Color(0xFF327A60)),
           );
         },
+      ),
+    );
+  }
+}
+
+class AdminInvoicesScreen extends StatelessWidget {
+  const AdminInvoicesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Invoices',
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          EmptyState(
+            icon: Icons.receipt_long_outlined,
+            message:
+                'No invoices have been generated yet. Approved timesheets will appear here for billing review.',
+          ),
+        ],
       ),
     );
   }

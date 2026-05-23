@@ -5,49 +5,7 @@ import '../models/care_models.dart';
 import 'care_repository.dart';
 
 class DemoCareRepository implements CareRepository {
-  DemoCareRepository() {
-    final now = DateTime.now();
-    _shift = ShiftAssignment(
-      id: 'shift-1001',
-      staffId: staffUser.id,
-      clientId: client.id,
-      startTime: DateTime(now.year, now.month, now.day, 7),
-      endTime: DateTime(now.year, now.month, now.day, 15),
-      serviceLocation: 'Harbourview Supported Living, Suite 12',
-      assignedLatitude: -33.8688,
-      assignedLongitude: 151.2093,
-    );
-    _progressNotes.add(
-      ProgressNote(
-        id: 'note-seed',
-        staffId: staffUser.id,
-        clientId: client.id,
-        shiftSummary: 'Morning routine completed with calm engagement.',
-        activities: 'Short garden walk and music session.',
-        mealsFluids:
-            'Breakfast completed. Fluids encouraged throughout morning.',
-        personalCare: 'One-person assistance for shower and dressing.',
-        moodBehaviour: 'Settled, positive response to quiet prompts.',
-        communication: 'Used simple choices and visual schedule.',
-        followUp: 'Monitor fatigue after lunch.',
-        createdAt: now.subtract(const Duration(hours: 2)),
-      ),
-    );
-    _hazards.add(
-      HazardReport(
-        id: 'hazard-seed',
-        staffId: staffUser.id,
-        clientId: client.id,
-        hazardType: 'Trip hazard',
-        location: 'Hallway near laundry',
-        riskLevel: 'Medium',
-        description: 'Power cable crossing walking path.',
-        actionTaken: 'Moved cable aside and notified maintenance.',
-        status: ReportStatus.actionRequired,
-        createdAt: now.subtract(const Duration(hours: 1, minutes: 20)),
-      ),
-    );
-  }
+  DemoCareRepository();
 
   static const staffUser = AppUser(
     id: 'staff-1',
@@ -83,7 +41,7 @@ class DemoCareRepository implements CareRepository {
     emergencyContact: 'Taylor Nguyen, 0400 111 222',
   );
 
-  late ShiftAssignment _shift;
+  ShiftAssignment? _shift;
   final List<ProgressNote> _progressNotes = [];
   final List<IncidentReport> _incidents = [];
   final List<HazardReport> _hazards = [];
@@ -144,8 +102,7 @@ class DemoCareRepository implements CareRepository {
 
   @override
   Future<ShiftAssignment?> getTodaysShift(String staffId) async {
-    if (staffId == staffUser.id) return _shift;
-    return null;
+    return _shift?.staffId == staffId ? _shift : null;
   }
 
   @override
@@ -306,31 +263,33 @@ class DemoCareRepository implements CareRepository {
     required double distanceMetres,
     required bool verified,
   }) async {
-    _shift = shift.copyWith(
+    final updated = shift.copyWith(
       checkInLatitude: latitude,
       checkInLongitude: longitude,
       checkInStatus: verified ? 'Verified' : 'Failed',
       shiftStatus: verified ? 'Started' : 'Scheduled',
     );
+    _shift = updated;
     _checkIns.add(
       CheckInRecord(
         id: appUuid.v4(),
         staffId: shift.staffId,
         shiftId: shift.id,
-        status: _shift.checkInStatus,
+        status: updated.checkInStatus,
         latitude: latitude,
         longitude: longitude,
         distanceMetres: distanceMetres,
         createdAt: DateTime.now(),
       ),
     );
-    return _shift;
+    return updated;
   }
 
   @override
   Future<ShiftAssignment> endShift(ShiftAssignment shift) async {
-    _shift = shift.copyWith(shiftStatus: 'Ended');
-    return _shift;
+    final updated = shift.copyWith(shiftStatus: 'Ended');
+    _shift = updated;
+    return updated;
   }
 
   @override
