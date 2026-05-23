@@ -248,6 +248,70 @@ class ProgressNote {
   }
 }
 
+class ShiftTask {
+  const ShiftTask({
+    required this.id,
+    required this.shiftId,
+    required this.title,
+    required this.notes,
+    required this.category,
+    required this.isCompleted,
+    required this.createdAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String shiftId;
+  final String title;
+  final String notes;
+  final String category;
+  final bool isCompleted;
+  final DateTime createdAt;
+  final DateTime? completedAt;
+
+  ShiftTask copyWith({
+    bool? isCompleted,
+    DateTime? completedAt,
+    bool clearCompletedAt = false,
+  }) {
+    return ShiftTask(
+      id: id,
+      shiftId: shiftId,
+      title: title,
+      notes: notes,
+      category: category,
+      isCompleted: isCompleted ?? this.isCompleted,
+      createdAt: createdAt,
+      completedAt: clearCompletedAt ? null : completedAt ?? this.completedAt,
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'shiftId': shiftId,
+    'title': title,
+    'notes': notes,
+    'category': category,
+    'isCompleted': isCompleted,
+    'createdAt': Timestamp.fromDate(createdAt),
+    'completedAt': completedAt == null
+        ? null
+        : Timestamp.fromDate(completedAt!),
+  };
+
+  factory ShiftTask.fromFirestore(String id, Map<String, dynamic> data) {
+    return ShiftTask(
+      id: id,
+      shiftId: data['shiftId'] as String? ?? '',
+      title: data['title'] as String? ?? 'Care task',
+      notes: data['notes'] as String? ?? '',
+      category: data['category'] as String? ?? 'Shift task',
+      isCompleted: data['isCompleted'] as bool? ?? false,
+      createdAt: dateFromFirestore(data['createdAt']) ?? DateTime.now(),
+      completedAt: dateFromFirestore(data['completedAt']),
+    );
+  }
+}
+
 class IncidentReport {
   const IncidentReport({
     required this.id,

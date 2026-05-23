@@ -9,9 +9,10 @@ void openScreen(BuildContext context, Widget screen) {
 
 Future<void> signOutAndReturnToLogin(BuildContext context) async {
   final controller = CareScope.of(context);
+  final navigator = Navigator.of(context, rootNavigator: true);
   await controller.signOut();
-  if (context.mounted) {
-    await Navigator.of(context).pushAndRemoveUntil(
+  if (navigator.mounted) {
+    await navigator.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );

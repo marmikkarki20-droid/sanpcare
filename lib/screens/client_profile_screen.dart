@@ -11,7 +11,16 @@ class ClientProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final client = controller.client!;
+    final client = controller.client;
+    if (client == null) {
+      return const AppScaffold(
+        title: 'Client profile',
+        body: EmptyState(
+          icon: Icons.person_outline,
+          message: 'No client has been assigned yet.',
+        ),
+      );
+    }
 
     return AppScaffold(
       title: 'Client profile',

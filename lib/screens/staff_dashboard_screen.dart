@@ -31,10 +31,14 @@ class StaffDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final shift = controller.shift!;
-    final client = controller.client!;
-    final user = controller.user!;
-    final selectedDate = _dateOnly(shift.startTime);
+    final user = controller.user;
+    if (user == null) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+
+    final shift = controller.shift;
+    final client = controller.client;
+    final selectedDate = _dateOnly(shift?.startTime ?? DateTime.now());
     final scheduleDates = List.generate(
       5,
       (index) => selectedDate.add(Duration(days: index)),
@@ -109,12 +113,14 @@ class StaffDashboardScreen extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
                     children: [
                       ...scheduleDates.map((date) {
-                        final isRosteredDay = _isSameDay(date, shift.startTime);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 18),
                           child: _ScheduleDayRow(
                             date: date,
-                            child: isRosteredDay
+                            child:
+                                shift != null &&
+                                    client != null &&
+                                    _isSameDay(date, shift.startTime)
                                 ? _RosterShiftCard(
                                     shift: shift,
                                     client: client,
@@ -152,9 +158,19 @@ class _StaffShiftDetailScreenState extends State<StaffShiftDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final shift = controller.shift!;
-    final client = controller.client!;
-    final user = controller.user!;
+    final shift = controller.shift;
+    final client = controller.client;
+    final user = controller.user;
+
+    if (shift == null || client == null || user == null) {
+      return const AppScaffold(
+        title: 'Shift details',
+        body: EmptyState(
+          icon: Icons.event_busy_outlined,
+          message: 'No shift has been assigned yet.',
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -185,7 +201,7 @@ class _StaffShiftDetailScreenState extends State<StaffShiftDetailScreen> {
         index: selectedIndex,
         children: [
           _ShiftDetailsTab(shift: shift, client: client, user: user),
-          _ShiftTasksTab(client: client),
+          _ShiftTasksTab(tasks: controller.shiftTasks),
           _ShiftProgressTab(notes: controller.progressNotes),
           _ShiftEventsTab(reports: controller.reports),
         ],
@@ -552,10 +568,12 @@ class _StaffDrawer extends StatelessWidget {
                     _DrawerAction(
                       icon: Icons.notifications_none_rounded,
                       label: 'Notification',
-                      trailing: const _DrawerBadge(count: 2),
+                      trailing: _DrawerBadge(
+                        count: controller.shift == null ? 1 : 2,
+                      ),
                       onTap: () => closeAndOpen(
                         StaffNotificationsScreen(
-                          shift: controller.shift!,
+                          shift: controller.shift,
                           user: user,
                         ),
                       ),
@@ -910,25 +928,39 @@ class _ShiftDetailsTab extends StatelessWidget {
 }
 
 class _ShiftTasksTab extends StatelessWidget {
-  const _ShiftTasksTab({required this.client});
+  const _ShiftTasksTab({required this.tasks});
 
-  final ClientProfile client;
+  final List<ShiftTask> tasks;
 
   @override
   Widget build(BuildContext context) {
-    final tasks = [
-      ('Personal care support', client.careNeeds, Icons.volunteer_activism),
-      ('Mobility support', client.mobilityStatus, Icons.accessible_forward),
-      ('Communication', client.communicationNeeds, Icons.record_voice_over),
-      ('Risk alerts', client.riskNotes, Icons.priority_high),
-    ];
+    if (tasks.isEmpty) {
+      return const EmptyState(
+        icon: Icons.task_alt_outlined,
+        message: 'No tasks have been assigned by admin yet.',
+      );
+    }
+
+    final controller = CareScope.of(context);
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(18, 22, 18, 28),
       itemCount: tasks.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final task = tasks[index];
-        return _TaskTile(title: task.$1, subtitle: task.$2, icon: task.$3);
+        return _TaskTile(
+          task: task,
+          isBusy: controller.isBusy,
+          onChanged: (completed) async {
+            await controller.setShiftTaskCompleted(task, completed);
+            if (context.mounted) {
+              showSnack(
+                context,
+                completed ? 'Task marked complete.' : 'Task reopened.',
+              );
+            }
+          },
+        );
       },
     );
   }
@@ -1296,14 +1328,14 @@ class _DetailLine extends StatelessWidget {
 
 class _TaskTile extends StatelessWidget {
   const _TaskTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
+    required this.task,
+    required this.isBusy,
+    required this.onChanged,
   });
 
-  final String title;
-  final String subtitle;
-  final IconData icon;
+  final ShiftTask task;
+  final bool isBusy;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1313,42 +1345,63 @@ class _TaskTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         side: const BorderSide(color: Color(0xFFE0EDF1)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: const Color(0xFFE7F5FA),
-              child: Icon(icon, color: _scheduleBlue),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: _ink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: _muted,
-                      fontSize: 15,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: isBusy ? null : () => onChanged(!task.isCompleted),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: task.isCompleted,
+                onChanged: isBusy
+                    ? null
+                    : (value) => onChanged(value ?? !task.isCompleted),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.title,
+                      style: TextStyle(
+                        color: task.isCompleted ? _muted : _ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        decoration: task.isCompleted
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (task.notes.isNotEmpty)
+                      Text(
+                        task.notes,
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 15,
+                          height: 1.35,
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    StatusBadge(
+                      label: task.isCompleted ? 'Completed' : task.category,
+                      color: task.isCompleted ? _actionGreen : _scheduleBlue,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(
+                task.isCompleted
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: task.isCompleted ? _actionGreen : _muted,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1459,7 +1512,16 @@ class NurseHandoverScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final client = controller.client!;
+    final client = controller.client;
+    if (client == null) {
+      return const AppScaffold(
+        title: 'Nurse handover',
+        body: EmptyState(
+          icon: Icons.medical_services_outlined,
+          message: 'No client has been assigned yet.',
+        ),
+      );
+    }
     return AppScaffold(
       title: 'Nurse handover',
       body: ListView(
@@ -1508,7 +1570,7 @@ class StaffNotificationsScreen extends StatelessWidget {
     required this.user,
   });
 
-  final ShiftAssignment shift;
+  final ShiftAssignment? shift;
   final AppUser user;
 
   @override
@@ -1518,14 +1580,23 @@ class StaffNotificationsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          InfoCard(
-            icon: Icons.calendar_month_outlined,
-            title: 'New roster assigned',
-            subtitle:
-                '${DateFormat('EEE, d MMM').format(shift.startTime)} • ${_timeRange(shift)}\n${shift.serviceLocation}',
-            badge: const StatusBadge(label: 'Roster', color: _scheduleBlue),
-            onTap: () => openScreen(context, const StaffShiftDetailScreen()),
-          ),
+          if (shift == null)
+            const InfoCard(
+              icon: Icons.event_busy_outlined,
+              title: 'No roster assigned',
+              subtitle:
+                  'Your next shift will appear here after admin assigns it.',
+              badge: StatusBadge(label: 'Roster', color: _muted),
+            )
+          else
+            InfoCard(
+              icon: Icons.calendar_month_outlined,
+              title: 'New roster assigned',
+              subtitle:
+                  '${DateFormat('EEE, d MMM').format(shift!.startTime)} • ${_timeRange(shift!)}\n${shift!.serviceLocation}',
+              badge: const StatusBadge(label: 'Roster', color: _scheduleBlue),
+              onTap: () => openScreen(context, const StaffShiftDetailScreen()),
+            ),
           const SizedBox(height: 12),
           const InfoCard(
             icon: Icons.health_and_safety_outlined,
@@ -1827,7 +1898,10 @@ class StaffDocumentsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = CareScope.of(context).user!;
+    final user = CareScope.of(context).user;
+    if (user == null) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
     return AppScaffold(
       title: 'My documents',
       body: ListView(
@@ -1957,7 +2031,16 @@ class CareLocationOverviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final shift = controller.shift!;
+    final shift = controller.shift;
+    if (shift == null) {
+      return const AppScaffold(
+        title: 'Map & location',
+        body: EmptyState(
+          icon: Icons.map_outlined,
+          message: 'No shift location has been assigned yet.',
+        ),
+      );
+    }
     return AppScaffold(
       title: 'Map & location',
       body: ListView(

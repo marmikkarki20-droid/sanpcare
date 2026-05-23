@@ -17,6 +17,7 @@ class CareController extends ChangeNotifier {
   AppUser? user;
   ShiftAssignment? shift;
   ClientProfile? client;
+  List<ShiftTask> shiftTasks = [];
   List<ProgressNote> progressNotes = [];
   List<ReportSummary> reports = [];
   List<CheckInRecord> checkIns = [];
@@ -33,8 +34,15 @@ class CareController extends ChangeNotifier {
       user = await repository.signIn(email, password);
       if (isStaff) {
         shift = await repository.getTodaysShift(user!.id);
-        client = await repository.getClient(shift!.clientId);
-        progressNotes = await repository.getProgressNotes(client!.id);
+        if (shift != null) {
+          client = await repository.getClient(shift!.clientId);
+          shiftTasks = await repository.getShiftTasks(shift!.id);
+          progressNotes = await repository.getProgressNotes(client!.id);
+        } else {
+          client = null;
+          shiftTasks = [];
+          progressNotes = [];
+        }
         reports = await repository.getReports(staffId: user!.id);
       } else {
         reports = await repository.getReports();
@@ -48,6 +56,7 @@ class CareController extends ChangeNotifier {
     user = null;
     shift = null;
     client = null;
+    shiftTasks = [];
     progressNotes = [];
     reports = [];
     checkIns = [];
@@ -59,8 +68,14 @@ class CareController extends ChangeNotifier {
     if (user == null) return;
     await _guard(() async {
       if (isStaff) {
-        if (shift != null) {
+        shift = await repository.getTodaysShift(user!.id);
+        if (shift == null) {
+          client = null;
+          shiftTasks = [];
+          progressNotes = [];
+        } else {
           client = await repository.getClient(shift!.clientId);
+          shiftTasks = await repository.getShiftTasks(shift!.id);
           progressNotes = await repository.getProgressNotes(client!.id);
         }
         reports = await repository.getReports(staffId: user!.id);
@@ -140,6 +155,28 @@ class CareController extends ChangeNotifier {
     if (currentShift == null) return;
     await _guard(() async {
       shift = await repository.endShift(currentShift);
+    });
+  }
+
+  Future<void> setShiftTaskCompleted(ShiftTask task, bool isCompleted) async {
+    await _guard(() async {
+      final updated = await repository.updateShiftTask(
+        task.copyWith(
+          isCompleted: isCompleted,
+          completedAt: isCompleted ? DateTime.now() : null,
+          clearCompletedAt: !isCompleted,
+        ),
+      );
+      final index = shiftTasks.indexWhere((item) => item.id == task.id);
+      if (index == -1) {
+        shiftTasks = [...shiftTasks, updated];
+      } else {
+        shiftTasks = [
+          ...shiftTasks.take(index),
+          updated,
+          ...shiftTasks.skip(index + 1),
+        ];
+      }
     });
   }
 

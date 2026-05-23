@@ -105,7 +105,6 @@ class FirebaseCareRepository implements CareRepository {
     };
 
     await _firestore.collection('users').doc(staffUser.uid).set(profile);
-    await _createStarterShift(staffUser.uid);
     return AppUser.fromFirestore(staffUser.uid, profile);
   }
 
@@ -124,61 +123,29 @@ class FirebaseCareRepository implements CareRepository {
   }
 
   @override
-  Future<ShiftAssignment> getTodaysShift(String staffId) async {
+  Future<ShiftAssignment?> getTodaysShift(String staffId) async {
     final snapshot = await _firestore
         .collection('shifts')
         .where('staffId', isEqualTo: staffId)
-        .limit(1)
+        .limit(20)
         .get();
 
     if (snapshot.docs.isEmpty) {
-      return _createStarterShift(staffId);
+      return null;
     }
 
-    final doc = snapshot.docs.first;
-    return ShiftAssignment.fromFirestore(doc.id, doc.data());
-  }
+    final now = DateTime.now().subtract(const Duration(hours: 12));
+    final shifts =
+        snapshot.docs
+            .map((doc) => ShiftAssignment.fromFirestore(doc.id, doc.data()))
+            .where((shift) => !shift.isEnded)
+            .toList()
+          ..sort((a, b) => a.startTime.compareTo(b.startTime));
 
-  Future<ShiftAssignment> _createStarterShift(String staffId) async {
-    const clientId = 'client-harbourview-demo';
-    const serviceLocation = 'Harbourview Supported Living, Suite 12';
-    final now = DateTime.now();
-    final startTime = DateTime(now.year, now.month, now.day, 7);
-    final endTime = DateTime(now.year, now.month, now.day, 15);
-    final shiftId =
-        'shift-$staffId-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-
-    await _firestore.collection('clients').doc(clientId).set({
-      'fullName': 'Avery Nguyen',
-      'roomNumber': 'Room 12',
-      'address': 'Harbourview Supported Living, Sydney NSW',
-      'careNeeds':
-          'Personal care support, meal prompting, community access, and low-stimulation routines.',
-      'mobilityStatus':
-          'Walks independently indoors. Supervision required on stairs and wet surfaces.',
-      'communicationNeeds':
-          'Prefers short sentences, visual choices, and extra response time.',
-      'riskNotes':
-          'Falls risk during fatigue. Sensory overload can increase agitation in noisy areas.',
-      'emergencyContact': 'Taylor Nguyen, 0400 111 222',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    final shiftData = {
-      'staffId': staffId,
-      'clientId': clientId,
-      'startTime': Timestamp.fromDate(startTime),
-      'endTime': Timestamp.fromDate(endTime),
-      'serviceLocation': serviceLocation,
-      'assignedLatitude': -33.8688,
-      'assignedLongitude': 151.2093,
-      'checkInStatus': 'Pending',
-      'shiftStatus': 'Scheduled',
-      'createdAt': FieldValue.serverTimestamp(),
-    };
-
-    await _firestore.collection('shifts').doc(shiftId).set(shiftData);
-    return ShiftAssignment.fromFirestore(shiftId, shiftData);
+    for (final shift in shifts) {
+      if (shift.endTime.isAfter(now)) return shift;
+    }
+    return shifts.firstOrNull;
   }
 
   @override
@@ -188,6 +155,39 @@ class FirebaseCareRepository implements CareRepository {
       throw StateError('Client profile could not be found.');
     }
     return ClientProfile.fromFirestore(doc.id, doc.data() ?? {});
+  }
+
+  @override
+  Future<List<ShiftTask>> getShiftTasks(String shiftId) async {
+    final snapshot = await _firestore
+        .collection('shiftTasks')
+        .where('shiftId', isEqualTo: shiftId)
+        .limit(50)
+        .get();
+    final tasks = snapshot.docs
+        .map((doc) => ShiftTask.fromFirestore(doc.id, doc.data()))
+        .toList();
+    tasks.sort((a, b) {
+      if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return tasks;
+  }
+
+  @override
+  Future<void> addShiftTask(ShiftTask task) async {
+    await _firestore.collection('shiftTasks').add(task.toFirestore());
+  }
+
+  @override
+  Future<ShiftTask> updateShiftTask(ShiftTask task) async {
+    await _firestore.collection('shiftTasks').doc(task.id).update({
+      'isCompleted': task.isCompleted,
+      'completedAt': task.completedAt == null
+          ? null
+          : Timestamp.fromDate(task.completedAt!),
+    });
+    return task;
   }
 
   @override
@@ -445,5 +445,7 @@ class FirebaseCareRepository implements CareRepository {
 }
 
 extension _IterableLastOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+
   T? get lastOrNull => isEmpty ? null : last;
 }

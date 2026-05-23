@@ -56,6 +56,7 @@ class AdminDashboardScreen extends StatelessWidget {
         onStaff: () => openScreen(context, const AdminStaffDirectoryScreen()),
         onClients: () =>
             openScreen(context, const AdminResidentOnboardingScreen()),
+        onTasks: () => openScreen(context, const AdminTaskManagementScreen()),
         onReports: () => openScreen(
           context,
           AdminFilteredReportsScreen(
@@ -157,6 +158,16 @@ class AdminDashboardScreen extends StatelessWidget {
                       onTap: () => openScreen(
                         context,
                         const AdminResidentOnboardingScreen(),
+                      ),
+                    ),
+                    _AdminWorkflowCard(
+                      icon: Icons.task_alt_outlined,
+                      title: 'Shift tasks',
+                      subtitle: 'Add task items for assigned staff shifts.',
+                      color: const Color(0xFF6F5BD8),
+                      onTap: () => openScreen(
+                        context,
+                        const AdminTaskManagementScreen(),
                       ),
                     ),
                   ],
@@ -279,6 +290,7 @@ class _AdminPortalDrawer extends StatelessWidget {
     required this.onScheduler,
     required this.onStaff,
     required this.onClients,
+    required this.onTasks,
     required this.onReports,
   });
 
@@ -286,6 +298,7 @@ class _AdminPortalDrawer extends StatelessWidget {
   final VoidCallback onScheduler;
   final VoidCallback onStaff;
   final VoidCallback onClients;
+  final VoidCallback onTasks;
   final VoidCallback onReports;
 
   @override
@@ -346,6 +359,11 @@ class _AdminPortalDrawer extends StatelessWidget {
                     icon: Icons.access_time_outlined,
                     label: 'Timesheet',
                     onTap: () => closeAndSnack('Timesheet review opened.'),
+                  ),
+                  _AdminDrawerItem(
+                    icon: Icons.task_alt_outlined,
+                    label: 'Tasks',
+                    onTap: () => closeAndRun(onTasks),
                   ),
                   _AdminDrawerItem(
                     icon: Icons.receipt_long_outlined,
@@ -1591,6 +1609,258 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
       ),
     );
   }
+}
+
+class AdminTaskManagementScreen extends StatefulWidget {
+  const AdminTaskManagementScreen({super.key});
+
+  @override
+  State<AdminTaskManagementScreen> createState() =>
+      _AdminTaskManagementScreenState();
+}
+
+class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
+  final formKey = GlobalKey<FormState>();
+  final shiftIdController = TextEditingController();
+  final titleController = TextEditingController();
+  final categoryController = TextEditingController(text: 'Shift task');
+  final notesController = TextEditingController();
+  late Future<List<_AdminShiftOption>> shiftsFuture;
+  bool isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    shiftsFuture = _loadShifts();
+  }
+
+  @override
+  void dispose() {
+    shiftIdController.dispose();
+    titleController.dispose();
+    categoryController.dispose();
+    notesController.dispose();
+    super.dispose();
+  }
+
+  Future<List<_AdminShiftOption>> _loadShifts() async {
+    final firestore = FirebaseFirestore.instance;
+    final snapshot = await firestore.collection('shifts').limit(30).get();
+    final shifts = await Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = doc.data();
+        final staffId = data['staffId'] as String? ?? '';
+        final clientId = data['clientId'] as String? ?? '';
+        final staffName = await _nameFor(firestore, 'users', staffId);
+        final clientName = await _nameFor(firestore, 'clients', clientId);
+        return _AdminShiftOption(
+          id: doc.id,
+          staffName: staffName ?? 'Assigned staff',
+          clientName: clientName ?? 'Client',
+          startTime: dateFromFirestore(data['startTime']) ?? DateTime.now(),
+          location: data['serviceLocation'] as String? ?? 'Service location',
+        );
+      }),
+    );
+    shifts.sort((a, b) => a.startTime.compareTo(b.startTime));
+    return shifts;
+  }
+
+  Future<String?> _nameFor(
+    FirebaseFirestore firestore,
+    String collection,
+    String id,
+  ) async {
+    if (id.isEmpty) return null;
+    final doc = await firestore.collection(collection).doc(id).get();
+    final data = doc.data();
+    if (collection == 'users') return data?['fullName'] as String?;
+    return data?['fullName'] as String?;
+  }
+
+  Future<void> submit() async {
+    if (!formKey.currentState!.validate()) return;
+    setState(() => isSaving = true);
+    try {
+      await FirebaseFirestore.instance.collection('shiftTasks').add({
+        'shiftId': shiftIdController.text.trim(),
+        'title': titleController.text.trim(),
+        'category': categoryController.text.trim().isEmpty
+            ? 'Shift task'
+            : categoryController.text.trim(),
+        'notes': notesController.text.trim(),
+        'isCompleted': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      titleController.clear();
+      notesController.clear();
+      if (mounted) {
+        showSnack(context, 'Task added to shift.');
+        setState(() {
+          shiftsFuture = _loadShifts();
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        showSnack(context, error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Shift tasks',
+      body: Form(
+        key: formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add staff task',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Select an assigned shift, then add the task staff should complete.',
+                      style: TextStyle(
+                        color: _adminMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _AdminTextField(
+                      controller: shiftIdController,
+                      label: 'Selected shift ID',
+                      icon: Icons.event_available_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    _AdminTextField(
+                      controller: titleController,
+                      label: 'Task title',
+                      icon: Icons.task_alt_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    _AdminTextField(
+                      controller: categoryController,
+                      label: 'Category',
+                      icon: Icons.label_outline,
+                    ),
+                    const SizedBox(height: 12),
+                    _AdminTextField(
+                      controller: notesController,
+                      label: 'Task instructions',
+                      icon: Icons.notes_outlined,
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: isSaving ? null : submit,
+                        icon: isSaving
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.add_task_outlined),
+                        label: const Text('Add task'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            SectionHeader(
+              title: 'Assigned shifts',
+              trailing: IconButton(
+                tooltip: 'Refresh shifts',
+                icon: const Icon(Icons.refresh),
+                onPressed: () => setState(() => shiftsFuture = _loadShifts()),
+              ),
+            ),
+            const SizedBox(height: 10),
+            FutureBuilder<List<_AdminShiftOption>>(
+              future: shiftsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+                final shifts = snapshot.data ?? [];
+                if (shifts.isEmpty) {
+                  return const EmptyState(
+                    icon: Icons.event_busy_outlined,
+                    message: 'No shifts are assigned yet.',
+                  );
+                }
+                return Column(
+                  children: shifts.map((shift) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: InfoCard(
+                        icon: Icons.event_available_outlined,
+                        title:
+                            '${shift.staffName} • ${DateFormat('EEE, d MMM').format(shift.startTime)}',
+                        subtitle:
+                            '${shift.clientName}\n${DateFormat.jm().format(shift.startTime)} • ${shift.location}',
+                        badge: StatusBadge(
+                          label: shiftIdController.text.trim() == shift.id
+                              ? 'Selected'
+                              : 'Use',
+                          color: shiftIdController.text.trim() == shift.id
+                              ? _adminNavy
+                              : _adminMuted,
+                        ),
+                        onTap: () {
+                          setState(() => shiftIdController.text = shift.id);
+                          showSnack(context, 'Shift selected.');
+                        },
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminShiftOption {
+  const _AdminShiftOption({
+    required this.id,
+    required this.staffName,
+    required this.clientName,
+    required this.startTime,
+    required this.location,
+  });
+
+  final String id;
+  final String staffName;
+  final String clientName;
+  final DateTime startTime;
+  final String location;
 }
 
 class AdminStaffDirectoryScreen extends StatelessWidget {

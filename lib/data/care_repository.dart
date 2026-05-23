@@ -16,9 +16,15 @@ abstract class CareRepository {
     required String position,
   });
 
-  Future<ShiftAssignment> getTodaysShift(String staffId);
+  Future<ShiftAssignment?> getTodaysShift(String staffId);
 
   Future<ClientProfile> getClient(String clientId);
+
+  Future<List<ShiftTask>> getShiftTasks(String shiftId);
+
+  Future<void> addShiftTask(ShiftTask task);
+
+  Future<ShiftTask> updateShiftTask(ShiftTask task);
 
   Future<List<ProgressNote>> getProgressNotes(String clientId);
 

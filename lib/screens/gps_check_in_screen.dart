@@ -34,7 +34,16 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
-    final shift = controller.shift!;
+    final shift = controller.shift;
+    if (shift == null) {
+      return const AppScaffold(
+        title: 'GPS check-in',
+        body: EmptyState(
+          icon: Icons.location_off_outlined,
+          message: 'No shift location has been assigned yet.',
+        ),
+      );
+    }
     final activeResult = result;
     final checkedIn = shift.isCheckedIn;
 

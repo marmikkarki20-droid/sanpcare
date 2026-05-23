@@ -89,6 +89,7 @@ class DemoCareRepository implements CareRepository {
   final List<HazardReport> _hazards = [];
   final List<BehaviourChart> _charts = [];
   final List<CheckInRecord> _checkIns = [];
+  final List<ShiftTask> _tasks = [];
   final Map<String, _DemoStaffCredential> _createdStaff = {};
 
   @override
@@ -142,23 +143,39 @@ class DemoCareRepository implements CareRepository {
   }
 
   @override
-  Future<ShiftAssignment> getTodaysShift(String staffId) async {
+  Future<ShiftAssignment?> getTodaysShift(String staffId) async {
     if (staffId == staffUser.id) return _shift;
-    final now = DateTime.now();
-    return ShiftAssignment(
-      id: 'shift-$staffId',
-      staffId: staffId,
-      clientId: client.id,
-      startTime: DateTime(now.year, now.month, now.day, 7),
-      endTime: DateTime(now.year, now.month, now.day, 15),
-      serviceLocation: 'Harbourview Supported Living, Suite 12',
-      assignedLatitude: -33.8688,
-      assignedLongitude: 151.2093,
-    );
+    return null;
   }
 
   @override
   Future<ClientProfile> getClient(String clientId) async => client;
+
+  @override
+  Future<List<ShiftTask>> getShiftTasks(String shiftId) async {
+    final tasks = _tasks.where((task) => task.shiftId == shiftId).toList()
+      ..sort((a, b) {
+        if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
+        return a.createdAt.compareTo(b.createdAt);
+      });
+    return tasks;
+  }
+
+  @override
+  Future<void> addShiftTask(ShiftTask task) async {
+    _tasks.add(task);
+  }
+
+  @override
+  Future<ShiftTask> updateShiftTask(ShiftTask task) async {
+    final index = _tasks.indexWhere((item) => item.id == task.id);
+    if (index == -1) {
+      _tasks.add(task);
+    } else {
+      _tasks[index] = task;
+    }
+    return task;
+  }
 
   @override
   Future<List<ProgressNote>> getProgressNotes(String clientId) async {
