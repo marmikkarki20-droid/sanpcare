@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn() && userProfile().data.role == 'admin';
+    }
+
+    function isStaffOwner(staffId) {
+      return signedIn() && request.auth.uid == staffId;
+    }
+
+    function isBootstrapUser(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && !exists(/databases/$(database)/documents/users/$(userId))
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.auth.token.email.matches('admin.*') && request.resource.data.role == 'admin')
+          || request.resource.data.role == 'staff'
+        );
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAdmin() || isBootstrapUser(userId);
+      allow update, delete: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if signedIn() && (resource.data.staffId == request.auth.uid || isAdmin());
+      allow create: if isAdmin() || isStaffOwner(request.resource.data.staffId);
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.staffId == request.auth.uid
+        && request.resource.data.staffId == resource.data.staffId
+      );
+    }
+
+    match /checkIns/{checkInId} {
+      allow read: if isAdmin() || isStaffOwner(resource.data.staffId);
+      allow create: if isStaffOwner(request.resource.data.staffId);
+      allow update, delete: if isAdmin();
+    }
+
+    match /progressNotes/{noteId} {
+      allow read: if isAdmin() || isStaffOwner(resource.data.staffId);
+      allow create: if isStaffOwner(request.resource.data.staffId);
+      allow update, delete: if isAdmin();
+    }
+
+    match /incidentReports/{reportId} {
+      allow read: if isAdmin() || isStaffOwner(resource.data.staffId);
+      allow create: if isStaffOwner(request.resource.data.staffId);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /hazardReports/{reportId} {
+      allow read: if isAdmin() || isStaffOwner(resource.data.staffId);
+      allow create: if isStaffOwner(request.resource.data.staffId);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /behaviourCharts/{chartId} {
+      allow read: if isAdmin() || isStaffOwner(resource.data.staffId);
+      allow create: if isStaffOwner(request.resource.data.staffId);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}
