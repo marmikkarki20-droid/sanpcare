@@ -27,7 +27,6 @@ class CareController extends ChangeNotifier {
   bool get isSignedIn => user != null;
   bool get isStaff => user?.role == UserRole.staff;
   bool get isAdmin => user?.role == UserRole.admin;
-  bool get canReport => shift?.isCheckedIn ?? false;
 
   Future<void> signIn(String email, String password) async {
     await _guard(() async {
@@ -98,21 +97,6 @@ class CareController extends ChangeNotifier {
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: position.accuracy,
-      );
-    });
-  }
-
-  Future<CheckInResult> performDemoCheckIn() async {
-    final currentShift = shift;
-    if (currentShift == null) {
-      throw StateError('No shift loaded.');
-    }
-
-    return _guardWithResult(() {
-      return _completeCheckIn(
-        latitude: currentShift.assignedLatitude,
-        longitude: currentShift.assignedLongitude,
-        accuracy: 4,
       );
     });
   }

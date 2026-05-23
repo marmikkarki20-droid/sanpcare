@@ -5,14 +5,13 @@ CareSnap is a Flutter prototype for smart shift check-in and care reporting in a
 ## What It Includes
 
 - Staff/admin email login with role-based routing
-- Staff dashboard with today's shift, client, location, and locked reporting actions
+- Staff dashboard with assigned shifts, client details, location, and care records
 - GPS shift check-in using a 200 metre assigned-location radius
 - Client profile with care needs, mobility notes, risks, and emergency contact
 - Progress notes, incident reports, hazard reports, and behaviour charts
 - Camera/gallery evidence for incident and hazard reports
-- Admin dashboard for GPS check-ins, submitted records, and report status updates
+- Admin dashboard for operational priorities, rostering, facilities, residents, and submitted records
 - Firebase Auth, Firestore, and Storage repository implementation
-- Demo fallback repository when Firebase config files are not installed
 
 ## Project Structure
 
@@ -21,22 +20,13 @@ lib/
   app/          App shell, theme, and inherited controller scope
   controllers/  CareSnap state and workflow controller
   core/         Shared IDs, navigation helpers, and error messages
-  data/         Repository interface plus Firebase and demo implementations
+  data/         Repository interface plus Firebase implementation
   models/       User, shift, client, report, and chart models
   screens/      Login, staff, admin, GPS, client, and reporting screens
   services/     Device services such as GPS location
   widgets/      Reusable cards, grids, forms, badges, and evidence picker
   main.dart     Small entry point only
 ```
-
-## Demo Login
-
-When Firebase is not configured, the app uses seeded demo data:
-
-- Staff: `staff@caresnap.test` / `password123`
-- Admin: `admin@caresnap.test` / `admin123`
-
-The demo GPS screen includes a simulated on-site check-in so the reporting workflow can be demonstrated on an emulator or web preview without changing device GPS coordinates.
 
 ## Run Locally
 
@@ -63,16 +53,12 @@ dart pub global activate flutterfire_cli
 flutterfire configure
 ```
 
-4. Seed Firestore collections: `users`, `clients`, `shifts`, `progressNotes`, `incidentReports`, `hazardReports`, `behaviourCharts`, and `checkIns`.
+4. Create staff, clients, shifts, and tasks from the admin portal.
 5. Deploy the included rules:
 
 ```sh
 firebase deploy --only firestore:rules,storage
 ```
-
-The app can bootstrap the first Firestore profile for existing Authentication
-users whose emails start with `staff@` or `admin@`. On first staff login it also
-creates a starter client and today's shift if no shift exists yet.
 
 ## Verification
 

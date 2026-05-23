@@ -17,12 +17,10 @@ class GpsCheckInScreen extends StatefulWidget {
 class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
   CheckInResult? result;
 
-  Future<void> runCheckIn({required bool demo}) async {
+  Future<void> runCheckIn() async {
     final controller = CareScope.of(context);
     try {
-      final nextResult = demo
-          ? await controller.performDemoCheckIn()
-          : await controller.performLiveCheckIn();
+      final nextResult = await controller.performLiveCheckIn();
       setState(() => result = nextResult);
     } catch (_) {
       if (mounted) {
@@ -86,9 +84,7 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
             ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: controller.isBusy || checkedIn
-                ? null
-                : () => runCheckIn(demo: false),
+            onPressed: controller.isBusy || checkedIn ? null : runCheckIn,
             icon: controller.isBusy
                 ? const SizedBox.square(
                     dimension: 18,
@@ -96,14 +92,6 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
                   )
                 : const Icon(Icons.my_location),
             label: const Text('Verify live GPS'),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: controller.isBusy || checkedIn
-                ? null
-                : () => runCheckIn(demo: true),
-            icon: const Icon(Icons.pin_drop_outlined),
-            label: const Text('Verify assigned site'),
           ),
         ],
       ),

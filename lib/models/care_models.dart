@@ -72,7 +72,7 @@ class AppUser {
           ? UserRole.admin
           : UserRole.staff,
       position: data['position'] as String? ?? 'Support Worker',
-      facilityId: data['facilityId'] as String? ?? 'facility-1',
+      facilityId: data['facilityId'] as String? ?? '',
       isActive: data['isActive'] as bool? ?? true,
     );
   }

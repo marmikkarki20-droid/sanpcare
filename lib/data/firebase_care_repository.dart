@@ -39,32 +39,12 @@ class FirebaseCareRepository implements CareRepository {
 
     final snapshot = await _firestore.collection('users').doc(userId).get();
     if (!snapshot.exists) {
-      return _createProfileForAuthUser(authUser!, normalisedEmail);
+      throw StateError(
+        'This account has not been onboarded in the admin portal.',
+      );
     }
 
     return AppUser.fromFirestore(userId, snapshot.data() ?? {});
-  }
-
-  Future<AppUser> _createProfileForAuthUser(
-    firebase_auth.User authUser,
-    String fallbackEmail,
-  ) async {
-    final email = (authUser.email ?? fallbackEmail).trim().toLowerCase();
-    final role = email.startsWith('admin') ? UserRole.admin : UserRole.staff;
-    final profile = <String, dynamic>{
-      'fullName': role == UserRole.admin ? 'CareSnap Admin' : 'CareSnap Staff',
-      'email': email,
-      'role': role == UserRole.admin ? 'admin' : 'staff',
-      'position': role == UserRole.admin
-          ? 'Care Coordinator'
-          : 'Disability Support Worker',
-      'facilityId': 'harbourview-care',
-      'isActive': true,
-      'createdAt': FieldValue.serverTimestamp(),
-    };
-
-    await _firestore.collection('users').doc(authUser.uid).set(profile);
-    return AppUser.fromFirestore(authUser.uid, profile);
   }
 
   @override
@@ -98,7 +78,7 @@ class FirebaseCareRepository implements CareRepository {
       'position': position.trim().isEmpty
           ? 'Disability Support Worker'
           : position.trim(),
-      'facilityId': 'harbourview-care',
+      'facilityId': '',
       'isActive': true,
       'createdAt': FieldValue.serverTimestamp(),
       'createdBy': _auth.currentUser?.uid,

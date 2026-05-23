@@ -1,10 +1,97 @@
 import 'package:caresnap/app/care_snap_app.dart';
-import 'package:caresnap/data/demo_care_repository.dart';
+import 'package:caresnap/data/care_repository.dart';
+import 'package:caresnap/models/care_models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
+
+class EmptyTestRepository implements CareRepository {
+  @override
+  bool get isFirebaseBacked => false;
+
+  @override
+  Future<AppUser> signIn(String email, String password) {
+    throw StateError('Test repository does not authenticate.');
+  }
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<AppUser> createStaffAccount({
+    required String fullName,
+    required String email,
+    required String password,
+    required String position,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ShiftAssignment?> getTodaysShift(String staffId) async => null;
+
+  @override
+  Future<ClientProfile> getClient(String clientId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<ShiftTask>> getShiftTasks(String shiftId) async => [];
+
+  @override
+  Future<void> addShiftTask(ShiftTask task) async {}
+
+  @override
+  Future<ShiftTask> updateShiftTask(ShiftTask task) async => task;
+
+  @override
+  Future<List<ProgressNote>> getProgressNotes(String clientId) async => [];
+
+  @override
+  Future<List<ReportSummary>> getReports({String? staffId}) async => [];
+
+  @override
+  Future<List<CheckInRecord>> getCheckIns() async => [];
+
+  @override
+  Future<ShiftAssignment> saveCheckIn({
+    required ShiftAssignment shift,
+    required double latitude,
+    required double longitude,
+    required double distanceMetres,
+    required bool verified,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ShiftAssignment> endShift(ShiftAssignment shift) async => shift;
+
+  @override
+  Future<void> submitProgressNote(ProgressNote note) async {}
+
+  @override
+  Future<String?> uploadEvidence(XFile? image, String folder) async => null;
+
+  @override
+  Future<void> submitIncidentReport(IncidentReport report) async {}
+
+  @override
+  Future<void> submitHazardReport(HazardReport report) async {}
+
+  @override
+  Future<void> submitBehaviourChart(BehaviourChart chart) async {}
+
+  @override
+  Future<void> updateReportStatus({
+    required String collection,
+    required String id,
+    required ReportStatus status,
+  }) async {}
+}
 
 void main() {
   testWidgets('CareSnap opens on the sign in screen', (tester) async {
-    await tester.pumpWidget(CareSnapApp(repository: DemoCareRepository()));
+    await tester.pumpWidget(CareSnapApp(repository: EmptyTestRepository()));
 
     expect(find.text('CareSnap'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
