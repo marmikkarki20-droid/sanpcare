@@ -7,6 +7,8 @@ abstract class CareRepository {
 
   Future<AppUser> signIn(String email, String password);
 
+  Future<void> sendPasswordResetEmail(String email);
+
   Future<void> signOut();
 
   Future<AppUser> createStaffAccount({
@@ -16,7 +18,19 @@ abstract class CareRepository {
     required String position,
   });
 
+  Future<AppUser> updateCurrentUserProfile({
+    required String fullName,
+    required String position,
+    required String facilityId,
+  });
+
   Future<ShiftAssignment?> getTodaysShift(String staffId);
+
+  Future<List<ShiftAssignment>> getStaffShifts({
+    required String staffId,
+    required DateTime start,
+    required DateTime end,
+  });
 
   Future<ClientProfile> getClient(String clientId);
 
@@ -32,6 +46,12 @@ abstract class CareRepository {
 
   Future<List<CheckInRecord>> getCheckIns();
 
+  Future<List<StaffDocument>> getStaffDocuments(String staffId);
+
+  Future<String?> uploadStaffDocument(XFile? document, String staffId);
+
+  Future<void> addStaffDocument(StaffDocument document);
+
   Future<ShiftAssignment> saveCheckIn({
     required ShiftAssignment shift,
     required double latitude,
@@ -40,7 +60,18 @@ abstract class CareRepository {
     required bool verified,
   });
 
-  Future<ShiftAssignment> endShift(ShiftAssignment shift);
+  Future<void> updateShiftAssignedLocation({
+    required String shiftId,
+    required double latitude,
+    required double longitude,
+  });
+
+  Future<ShiftAssignment> endShift(
+    ShiftAssignment shift, {
+    double? latitude,
+    double? longitude,
+    double? distanceMetres,
+  });
 
   Future<void> submitProgressNote(ProgressNote note);
 

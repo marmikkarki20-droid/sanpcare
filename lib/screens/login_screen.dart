@@ -44,6 +44,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> resetPassword() async {
+    final email = emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      showSnack(context, 'Enter your email first.');
+      return;
+    }
+    final controller = CareScope.of(context);
+    try {
+      await controller.sendPasswordResetEmail(email);
+      if (!mounted) return;
+      showSnack(context, 'Password reset email sent.');
+    } catch (_) {
+      if (!mounted) return;
+      showSnack(context, controller.error ?? 'Could not send reset email.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
@@ -82,6 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 () => obscurePassword = !obscurePassword,
                               ),
                               onSubmit: submit,
+                              onForgotPassword: resetPassword,
                             ),
                           ),
                         ],
@@ -101,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               () => obscurePassword = !obscurePassword,
                             ),
                             onSubmit: submit,
+                            onForgotPassword: resetPassword,
                           ),
                         ],
                       ),
@@ -330,6 +349,7 @@ class _LoginCard extends StatelessWidget {
     required this.isBusy,
     required this.onTogglePassword,
     required this.onSubmit,
+    required this.onForgotPassword,
   });
 
   final GlobalKey<FormState> formKey;
@@ -339,6 +359,7 @@ class _LoginCard extends StatelessWidget {
   final bool isBusy;
   final VoidCallback onTogglePassword;
   final VoidCallback onSubmit;
+  final VoidCallback onForgotPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -367,41 +388,10 @@ class _LoginCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Sign in to access the staff or administration portal.',
+                  'Staff and admin portal',
                   style: TextStyle(
                     color: Color(0xFF607783),
                     fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F8FA),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFDCE8EC)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.lock_person_outlined,
-                        size: 20,
-                        color: Color(0xFF087C89),
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Secure portal access',
-                          style: TextStyle(
-                            color: Color(0xFF12313D),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -457,6 +447,11 @@ class _LoginCard extends StatelessWidget {
                         )
                       : const Icon(Icons.login),
                   label: const Text('Sign in'),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: isBusy ? null : onForgotPassword,
+                  child: const Text('Forgot password?'),
                 ),
               ],
             ),

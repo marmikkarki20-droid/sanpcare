@@ -2,9 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app/care_scope.dart';
+import '../controllers/care_controller.dart';
 import '../core/navigation.dart';
 import '../models/care_models.dart';
 import '../widgets/app_scaffold.dart';
@@ -27,8 +30,16 @@ const _actionGreen = Color(0xFF1B9B73);
 const _surface = Color(0xFFF5F8FA);
 const _line = Color(0xFFDCE8EC);
 
-class StaffDashboardScreen extends StatelessWidget {
+class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
+
+  @override
+  State<StaffDashboardScreen> createState() => _StaffDashboardScreenState();
+}
+
+class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
+  DateTime? _selectedDate;
+  bool _calendarExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -39,11 +50,14 @@ class StaffDashboardScreen extends StatelessWidget {
     }
 
     final shift = controller.shift;
-    final client = controller.client;
-    final selectedDate = _dateOnly(shift?.startTime ?? DateTime.now());
+    final selectedDate =
+        _selectedDate ?? _dateOnly(shift?.startTime ?? DateTime.now());
+    _selectedDate ??= selectedDate;
     final scheduleDates = List.generate(
-      5,
-      (index) => selectedDate.add(Duration(days: index)),
+      361,
+      (index) => selectedDate
+          .subtract(const Duration(days: 120))
+          .add(Duration(days: index)),
     );
 
     return Scaffold(
@@ -107,14 +121,39 @@ class StaffDashboardScreen extends StatelessWidget {
           child: StaffScheduleTimeline(
             selectedDate: selectedDate,
             scheduleDates: scheduleDates,
-            shift: shift,
-            client: client,
+            shifts: controller.scheduleShifts,
+            clientsById: controller.scheduleClients,
+            calendarExpanded: _calendarExpanded,
             onRefresh: controller.refresh,
-            onOpenShift: () =>
-                openScreen(context, const StaffShiftDetailScreen()),
+            onDateSelected: _selectDate,
+            onToggleCalendar: () {
+              setState(() => _calendarExpanded = !_calendarExpanded);
+            },
+            onCloseCalendar: () {
+              setState(() => _calendarExpanded = false);
+            },
+            onOpenShift: (selectedShift) =>
+                _openShift(context, controller, selectedShift),
           ),
         ),
       ),
+    );
+  }
+
+  void _selectDate(DateTime date) {
+    setState(() => _selectedDate = _dateOnly(date));
+  }
+
+  Future<void> _openShift(
+    BuildContext context,
+    CareController controller,
+    ShiftAssignment selectedShift,
+  ) async {
+    final navigator = Navigator.of(context);
+    await controller.selectStaffShift(selectedShift);
+    if (!mounted) return;
+    navigator.push(
+      MaterialPageRoute(builder: (_) => const StaffShiftDetailScreen()),
     );
   }
 }
@@ -541,6 +580,7 @@ class _ShiftDetailsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = CareScope.of(context);
     return ListView(
       padding: EdgeInsets.zero,
       children: [
@@ -551,6 +591,10 @@ class _ShiftDetailsTab extends StatelessWidget {
             address: shift.serviceLocation,
             latitude: shift.assignedLatitude,
             longitude: shift.assignedLongitude,
+            badge: StatusBadge(
+              label: _attendanceBadgeLabel(shift),
+              color: _attendanceBadgeColor(shift),
+            ),
           ),
         ),
         _AssignmentSplit(user: user, client: client),
@@ -587,7 +631,7 @@ class _ShiftDetailsTab extends StatelessWidget {
               ),
               const SizedBox(height: 30),
               const Text(
-                'More Actions',
+                'Attendance',
                 style: TextStyle(
                   color: _ink,
                   fontSize: 22,
@@ -595,39 +639,30 @@ class _ShiftDetailsTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: shift.isEnded
-                          ? null
-                          : () => openScreen(context, const GpsCheckInScreen()),
-                      icon: Icon(
-                        shift.isCheckedIn
-                            ? Icons.verified_outlined
-                            : Icons.my_location,
-                      ),
-                      label: Text(
-                        shift.isCheckedIn ? 'Check-in' : 'Start shift',
-                      ),
-                    ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: shift.isEnded || controller.isBusy
+                      ? null
+                      : () => _openShiftAttendanceVerification(context, shift),
+                  icon: controller.isBusy
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          shift.isCheckedIn
+                              ? Icons.logout_outlined
+                              : Icons.login_rounded,
+                        ),
+                  label: Text(
+                    shift.isEnded
+                        ? 'Clocked out'
+                        : shift.isCheckedIn
+                        ? 'Clock out'
+                        : 'Clock in',
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: shift.isCheckedIn && !shift.isEnded
-                          ? () async {
-                              await CareScope.of(context).endShift();
-                              if (context.mounted) {
-                                showSnack(context, 'Shift ended.');
-                              }
-                            }
-                          : null,
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('End shift'),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -1180,63 +1215,6 @@ class _ProgressNoteRow extends StatelessWidget {
   }
 }
 
-class NurseHandoverScreen extends StatelessWidget {
-  const NurseHandoverScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = CareScope.of(context);
-    final client = controller.client;
-    if (client == null) {
-      return const AppScaffold(
-        title: 'Nurse handover',
-        body: EmptyState(
-          icon: Icons.medical_services_outlined,
-          message: 'No client has been assigned yet.',
-        ),
-      );
-    }
-    return AppScaffold(
-      title: 'Nurse handover',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          InfoCard(
-            icon: Icons.medical_services_outlined,
-            title: client.fullName,
-            subtitle: '${client.roomNumber}\n${client.emergencyContact}',
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.volunteer_activism_outlined,
-            title: 'Care needs',
-            subtitle: client.careNeeds,
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.accessible_forward_outlined,
-            title: 'Mobility support',
-            subtitle: client.mobilityStatus,
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.record_voice_over_outlined,
-            title: 'Communication',
-            subtitle: client.communicationNeeds,
-          ),
-          const SizedBox(height: 12),
-          InfoCard(
-            icon: Icons.priority_high_outlined,
-            title: 'Risk alerts',
-            subtitle: client.riskNotes,
-            badge: const StatusBadge(label: 'Review', color: Color(0xFFC43D32)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class StaffNotificationsScreen extends StatelessWidget {
   const StaffNotificationsScreen({
     super.key,
@@ -1489,95 +1467,26 @@ class _UnavailableBlock {
   final String reason;
 }
 
-class StaffFormsScreen extends StatelessWidget {
-  const StaffFormsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Care forms',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _FormLinkCard(
-            icon: Icons.notes_outlined,
-            title: 'Progress note',
-            subtitle: 'Record daily care activities and follow-up needs.',
-            onTap: () => _openShiftAction(
-              context,
-              const _ShiftAction(
-                'Progress note',
-                Icons.notes_outlined,
-                ProgressNoteScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _FormLinkCard(
-            icon: Icons.report_problem_outlined,
-            title: 'Incident report',
-            subtitle: 'Submit an incident with optional photo evidence.',
-            onTap: () => _openShiftAction(
-              context,
-              const _ShiftAction(
-                'Incident report',
-                Icons.report_problem_outlined,
-                IncidentReportScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _FormLinkCard(
-            icon: Icons.warning_amber_outlined,
-            title: 'Hazard report',
-            subtitle: 'Report environmental risks and attach evidence.',
-            onTap: () => _openShiftAction(
-              context,
-              const _ShiftAction(
-                'Hazard report',
-                Icons.warning_amber_outlined,
-                HazardReportScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _FormLinkCard(
-            icon: Icons.psychology_alt_outlined,
-            title: 'Behaviour chart',
-            subtitle: 'Record triggers, responses, and outcomes.',
-            onTap: () => _openShiftAction(
-              context,
-              const _ShiftAction(
-                'Behaviour chart',
-                Icons.psychology_alt_outlined,
-                BehaviourChartScreen(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _FormLinkCard(
-            icon: Icons.folder_copy_outlined,
-            title: 'My reports',
-            subtitle: 'Review records submitted during your shifts.',
-            onTap: () => openScreen(context, const MyReportsScreen()),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class StaffDocumentsScreen extends StatelessWidget {
   const StaffDocumentsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final user = CareScope.of(context).user;
+    final controller = CareScope.of(context);
+    final user = controller.user;
     if (user == null) {
       return const Scaffold(body: SizedBox.shrink());
     }
+    final documents = controller.staffDocuments;
     return AppScaffold(
       title: 'My documents',
+      actions: [
+        IconButton(
+          tooltip: 'Add document',
+          icon: const Icon(Icons.add_rounded),
+          onPressed: () => _openAddDocumentSheet(context),
+        ),
+      ],
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1588,40 +1497,284 @@ class StaffDocumentsScreen extends StatelessWidget {
             badge: const StatusBadge(label: 'Active', color: _actionGreen),
           ),
           const SizedBox(height: 12),
-          const _DocumentListItem(
-            icon: Icons.verified_user_outlined,
-            title: 'NDIS worker screening',
-            subtitle: 'Verified credential on file.',
-            status: 'Current',
-            color: _actionGreen,
+          FilledButton.icon(
+            onPressed: () => _openAddDocumentSheet(context),
+            icon: const Icon(Icons.upload_file_rounded),
+            label: const Text('Add document'),
           ),
-          SizedBox(height: 12),
-          const _DocumentListItem(
-            icon: Icons.health_and_safety_outlined,
-            title: 'First aid certificate',
-            subtitle: 'Expires 18 Sep 2026.',
-            status: 'Review',
-            color: Color(0xFFD37A18),
-          ),
-          SizedBox(height: 12),
-          const _DocumentListItem(
-            icon: Icons.school_outlined,
-            title: 'Mandatory training record',
-            subtitle: 'Medication, infection control, and manual handling.',
-            status: 'Complete',
-            color: _scheduleBlue,
-          ),
-          SizedBox(height: 12),
-          const _DocumentListItem(
-            icon: Icons.description_outlined,
-            title: 'Employment documents',
-            subtitle: 'Contract, role description, and payroll forms.',
-            status: 'Filed',
-            color: Color(0xFF7C8790),
-          ),
+          const SizedBox(height: 16),
+          const SectionHeader(title: 'Uploaded documents'),
+          const SizedBox(height: 8),
+          if (documents.isEmpty)
+            const EmptyState(
+              icon: Icons.folder_open_outlined,
+              message: 'No staff documents have been added yet.',
+            )
+          else
+            ...documents.expand(
+              (document) => [
+                _StaffDocumentListItem(document: document),
+                const SizedBox(height: 12),
+              ],
+            ),
         ],
       ),
     );
+  }
+
+  void _openAddDocumentSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _AddStaffDocumentSheet(),
+    );
+  }
+}
+
+class _AddStaffDocumentSheet extends StatefulWidget {
+  const _AddStaffDocumentSheet();
+
+  @override
+  State<_AddStaffDocumentSheet> createState() => _AddStaffDocumentSheetState();
+}
+
+class _AddStaffDocumentSheetState extends State<_AddStaffDocumentSheet> {
+  final formKey = GlobalKey<FormState>();
+  final titleController = TextEditingController();
+  final categoryController = TextEditingController(text: 'Employment');
+  final linkController = TextEditingController();
+  final notesController = TextEditingController();
+  final picker = ImagePicker();
+
+  XFile? pickedFile;
+  DateTime? expiresAt;
+  bool submitting = false;
+
+  @override
+  void dispose() {
+    titleController.dispose();
+    categoryController.dispose();
+    linkController.dispose();
+    notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> pickFile(ImageSource source) async {
+    final file = await picker.pickImage(
+      source: source,
+      imageQuality: 82,
+      maxWidth: 1800,
+    );
+    if (file != null) {
+      setState(() => pickedFile = file);
+    }
+  }
+
+  Future<void> pickExpiry() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: expiresAt ?? now.add(const Duration(days: 365)),
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 10),
+    );
+    if (selected != null) {
+      setState(() => expiresAt = selected);
+    }
+  }
+
+  Future<void> submit() async {
+    if (!formKey.currentState!.validate()) return;
+    setState(() => submitting = true);
+    final controller = CareScope.of(context);
+    try {
+      await controller.addStaffDocument(
+        title: titleController.text,
+        category: categoryController.text,
+        notes: notesController.text,
+        fileUrl: linkController.text,
+        expiresAt: expiresAt,
+        file: pickedFile,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      showSnack(context, 'Document added.');
+    } catch (_) {
+      if (!mounted) return;
+      showSnack(context, controller.error ?? 'Could not add document.');
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 18, 18, 18 + bottomInset),
+      child: Form(
+        key: formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Add document',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: titleController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Document title',
+                  prefixIcon: Icon(Icons.description_outlined),
+                ),
+                validator: (value) {
+                  if ((value ?? '').trim().isEmpty) {
+                    return 'Document title is required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: categoryController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  prefixIcon: Icon(Icons.folder_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: notesController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Notes',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: linkController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Document link (optional)',
+                  prefixIcon: Icon(Icons.link_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: pickExpiry,
+                icon: const Icon(Icons.event_outlined),
+                label: Text(
+                  expiresAt == null
+                      ? 'Add expiry date'
+                      : 'Expires ${DateFormat('d MMM yyyy').format(expiresAt!)}',
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: submitting
+                          ? null
+                          : () => pickFile(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Choose image'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  IconButton.filledTonal(
+                    tooltip: 'Take photo',
+                    onPressed: submitting
+                        ? null
+                        : () => pickFile(ImageSource.camera),
+                    icon: const Icon(Icons.photo_camera_outlined),
+                  ),
+                ],
+              ),
+              if (pickedFile != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  pickedFile!.name,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: submitting ? null : submit,
+                icon: submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_rounded),
+                label: const Text('Save document'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StaffDocumentListItem extends StatelessWidget {
+  const _StaffDocumentListItem({required this.document});
+
+  final StaffDocument document;
+
+  @override
+  Widget build(BuildContext context) {
+    final expiresAt = document.expiresAt;
+    final expired = expiresAt != null && expiresAt.isBefore(DateTime.now());
+    final statusColor = expired
+        ? const Color(0xFFC43D32)
+        : expiresAt == null
+        ? _scheduleBlue
+        : _actionGreen;
+    final subtitle = [
+      document.category,
+      if (document.notes.isNotEmpty) document.notes,
+      if (document.fileName != null) 'File: ${document.fileName}',
+      if (expiresAt != null)
+        'Expires ${DateFormat('d MMM yyyy').format(expiresAt)}',
+      'Added ${DateFormat('d MMM yyyy').format(document.createdAt)}',
+    ].join('\n');
+
+    return InfoCard(
+      icon: Icons.description_outlined,
+      title: document.title,
+      subtitle: subtitle,
+      badge: StatusBadge(
+        label: expired ? 'Expired' : document.status,
+        color: statusColor,
+      ),
+      onTap: () => _openDocument(context),
+    );
+  }
+
+  Future<void> _openDocument(BuildContext context) async {
+    final fileUrl = document.fileUrl;
+    if (fileUrl == null || fileUrl.isEmpty) {
+      showSnack(context, 'This document has notes but no file attached.');
+      return;
+    }
+    final uri = Uri.parse(fileUrl);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      showSnack(context, 'Could not open document.');
+    }
   }
 }
 
@@ -1699,51 +1852,32 @@ class _DocumentListItem extends StatelessWidget {
   }
 }
 
-class CareLocationOverviewScreen extends StatelessWidget {
-  const CareLocationOverviewScreen({super.key});
+Future<void> _openShiftAttendanceVerification(
+  BuildContext context,
+  ShiftAssignment shift,
+) async {
+  final loggingOut = shift.isCheckedIn && !shift.isEnded;
+  final verified = await Navigator.of(
+    context,
+  ).push<bool>(MaterialPageRoute(builder: (_) => const GpsCheckInScreen()));
+  if (!context.mounted || verified != true) return;
+  showSnack(
+    context,
+    loggingOut ? 'Clocked out successfully.' : 'Clocked in successfully.',
+  );
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final controller = CareScope.of(context);
-    final shift = controller.shift;
-    if (shift == null) {
-      return const AppScaffold(
-        title: 'Map & location',
-        body: EmptyState(
-          icon: Icons.map_outlined,
-          message: 'No shift location has been assigned yet.',
-        ),
-      );
-    }
-    return AppScaffold(
-      title: 'Map & location',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          LocationMapCard(
-            title: 'Care visit location',
-            address: shift.serviceLocation,
-            latitude: shift.assignedLatitude,
-            longitude: shift.assignedLongitude,
-            badge: StatusBadge(
-              label: shift.checkInStatus,
-              color: shift.isCheckedIn
-                  ? const Color(0xFF327A60)
-                  : const Color(0xFFD37A18),
-            ),
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: shift.isEnded
-                ? null
-                : () => openScreen(context, const GpsCheckInScreen()),
-            icon: const Icon(Icons.my_location),
-            label: const Text('Open GPS check-in'),
-          ),
-        ],
-      ),
-    );
-  }
+String _attendanceBadgeLabel(ShiftAssignment shift) {
+  if (shift.isEnded) return 'Clocked out';
+  if (shift.isCheckedIn) return 'Clocked in';
+  if (shift.checkInStatus == 'Failed') return 'Location failed';
+  return 'Pending';
+}
+
+Color _attendanceBadgeColor(ShiftAssignment shift) {
+  if (shift.isEnded || shift.isCheckedIn) return const Color(0xFF327A60);
+  if (shift.checkInStatus == 'Failed') return const Color(0xFFC43D32);
+  return const Color(0xFFD37A18);
 }
 
 class StaffInfoScreen extends StatelessWidget {
@@ -1767,25 +1901,6 @@ class StaffInfoScreen extends StatelessWidget {
         children: [InfoCard(icon: icon, title: title, subtitle: message)],
       ),
     );
-  }
-}
-
-class _FormLinkCard extends StatelessWidget {
-  const _FormLinkCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoCard(icon: icon, title: title, subtitle: subtitle, onTap: onTap);
   }
 }
 

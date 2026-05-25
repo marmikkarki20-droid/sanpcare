@@ -818,6 +818,13 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
         dateController.text.trim(),
         endController.text.trim(),
       );
+      if (!end.isAfter(start)) {
+        throw StateError('End time must be after start time.');
+      }
+      final assignedCoordinates =
+          await AddressGeocodingService.coordinatesForAddress(
+            locationController.text.trim(),
+          );
 
       await firestore.collection('shifts').add({
         'staffId': staffSnapshot.docs.first.id,
@@ -826,15 +833,16 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
         'startTime': Timestamp.fromDate(start),
         'endTime': Timestamp.fromDate(end),
         'serviceLocation': locationController.text.trim(),
-        'assignedLatitude': -35.456,
-        'assignedLongitude': 149.087,
+        'assignedLatitude': assignedCoordinates.latitude,
+        'assignedLongitude': assignedCoordinates.longitude,
+        'assignedLocationSource': 'serviceAddress',
         'shiftStatus': 'Scheduled',
         'checkInStatus': 'Pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (!mounted) return;
-      showSnack(context, 'Shift assigned to $staffEmail.');
+      showSnack(context, 'Shift assigned with verified map location.');
       Navigator.pop(context);
     } catch (error) {
       if (mounted) {
@@ -865,17 +873,32 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
 
   DateTime _dateTimeFromFields(String dateValue, String timeValue) {
     final date = DateTime.tryParse(dateValue);
-    final parts = timeValue.split(':');
-    if (date == null || parts.length != 2) {
-      throw StateError('Use date YYYY-MM-DD and time HH:mm.');
+    final time = _timeFromText(timeValue);
+    if (date == null || time == null) {
+      throw StateError('Use a valid date and time, for example 3pm or 15:00.');
     }
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-      int.parse(parts[0]),
-      int.parse(parts[1]),
-    );
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  TimeOfDay? _timeFromText(String value) {
+    final text = value.trim().toLowerCase().replaceAll(' ', '');
+    final match = RegExp(r'^(\d{1,2})(?::(\d{2}))?(am|pm)?$').firstMatch(text);
+    if (match == null) return null;
+
+    var hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '0');
+    final period = match.group(3);
+    if (hour == null || minute == null || minute > 59) return null;
+
+    if (period != null) {
+      if (hour < 1 || hour > 12) return null;
+      if (period == 'pm' && hour != 12) hour += 12;
+      if (period == 'am' && hour == 12) hour = 0;
+    } else if (hour > 23) {
+      return null;
+    }
+
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   @override
@@ -929,8 +952,9 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
                     const SizedBox(height: 12),
                     _AdminTextField(
                       controller: dateController,
-                      label: 'Date  YYYY-MM-DD',
+                      label: 'Date',
                       icon: Icons.calendar_month_outlined,
+                      hintText: '2026-05-25',
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -938,16 +962,18 @@ class _AdminAssignShiftScreenState extends State<AdminAssignShiftScreen> {
                         Expanded(
                           child: _AdminTextField(
                             controller: startController,
-                            label: 'Start  HH:mm',
+                            label: 'Start time',
                             icon: Icons.schedule_outlined,
+                            hintText: '3pm',
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _AdminTextField(
                             controller: endController,
-                            label: 'End  HH:mm',
+                            label: 'End time',
                             icon: Icons.schedule_outlined,
+                            hintText: '10pm',
                           ),
                         ),
                       ],

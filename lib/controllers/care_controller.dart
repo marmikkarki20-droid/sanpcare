@@ -8,19 +8,25 @@ import '../core/error_messages.dart';
 import '../core/ids.dart';
 import '../data/care_repository.dart';
 import '../models/care_models.dart';
+import '../services/address_geocoding_service.dart';
 import '../services/location_service.dart';
 
 class CareController extends ChangeNotifier {
   CareController(this.repository);
 
+  static const double locationVerificationRadiusMetres = 200;
+
   final CareRepository repository;
   AppUser? user;
   ShiftAssignment? shift;
   ClientProfile? client;
+  List<ShiftAssignment> scheduleShifts = [];
+  Map<String, ClientProfile> scheduleClients = {};
   List<ShiftTask> shiftTasks = [];
   List<ProgressNote> progressNotes = [];
   List<ReportSummary> reports = [];
   List<CheckInRecord> checkIns = [];
+  List<StaffDocument> staffDocuments = [];
   bool isBusy = false;
   String? error;
 
@@ -32,21 +38,31 @@ class CareController extends ChangeNotifier {
     await _guard(() async {
       user = await repository.signIn(email, password);
       if (isStaff) {
-        shift = await repository.getTodaysShift(user!.id);
-        if (shift != null) {
-          client = await repository.getClient(shift!.clientId);
-          shiftTasks = await repository.getShiftTasks(shift!.id);
-          progressNotes = await repository.getProgressNotes(client!.id);
-        } else {
-          client = null;
-          shiftTasks = [];
-          progressNotes = [];
-        }
-        reports = await repository.getReports(staffId: user!.id);
+        await _loadStaffWorkspace();
       } else {
         reports = await repository.getReports();
         checkIns = await repository.getCheckIns();
       }
+    });
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _guard(() async {
+      await repository.sendPasswordResetEmail(email);
+    });
+  }
+
+  Future<void> updateCurrentUserProfile({
+    required String fullName,
+    required String position,
+    required String facilityId,
+  }) async {
+    await _guard(() async {
+      user = await repository.updateCurrentUserProfile(
+        fullName: fullName,
+        position: position,
+        facilityId: facilityId,
+      );
     });
   }
 
@@ -55,10 +71,13 @@ class CareController extends ChangeNotifier {
     user = null;
     shift = null;
     client = null;
+    scheduleShifts = [];
+    scheduleClients = {};
     shiftTasks = [];
     progressNotes = [];
     reports = [];
     checkIns = [];
+    staffDocuments = [];
     error = null;
     notifyListeners();
   }
@@ -67,17 +86,7 @@ class CareController extends ChangeNotifier {
     if (user == null) return;
     await _guard(() async {
       if (isStaff) {
-        shift = await repository.getTodaysShift(user!.id);
-        if (shift == null) {
-          client = null;
-          shiftTasks = [];
-          progressNotes = [];
-        } else {
-          client = await repository.getClient(shift!.clientId);
-          shiftTasks = await repository.getShiftTasks(shift!.id);
-          progressNotes = await repository.getProgressNotes(client!.id);
-        }
-        reports = await repository.getReports(staffId: user!.id);
+        await _loadStaffWorkspace();
       } else {
         reports = await repository.getReports();
         checkIns = await repository.getCheckIns();
@@ -85,10 +94,137 @@ class CareController extends ChangeNotifier {
     });
   }
 
+  Future<void> _loadStaffWorkspace() async {
+    final staffId = user!.id;
+    final today = DateTime.now();
+    final start = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).subtract(const Duration(days: 75));
+    final end = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).add(const Duration(days: 210));
+
+    scheduleShifts = await repository.getStaffShifts(
+      staffId: staffId,
+      start: start,
+      end: end,
+    );
+    shift = _bestCurrentShift(scheduleShifts);
+    shift ??= await repository.getTodaysShift(staffId);
+    if (shift != null && !scheduleShifts.any((item) => item.id == shift!.id)) {
+      scheduleShifts = [...scheduleShifts, shift!]
+        ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    }
+
+    scheduleClients = await _clientsFor(scheduleShifts);
+    await _loadSelectedShiftDetails();
+    reports = await repository.getReports(staffId: staffId);
+    staffDocuments = await repository.getStaffDocuments(staffId);
+  }
+
+  ShiftAssignment? _bestCurrentShift(List<ShiftAssignment> shifts) {
+    if (shifts.isEmpty) return null;
+    final threshold = DateTime.now().subtract(const Duration(hours: 12));
+    final available =
+        shifts
+            .where((item) => !item.isEnded && item.endTime.isAfter(threshold))
+            .toList()
+          ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    if (available.isNotEmpty) return available.first;
+    return shifts.last;
+  }
+
+  Future<Map<String, ClientProfile>> _clientsFor(
+    List<ShiftAssignment> shifts,
+  ) async {
+    final clients = <String, ClientProfile>{};
+    final ids = shifts
+        .map((item) => item.clientId)
+        .where((id) => id.isNotEmpty);
+    for (final clientId in ids.toSet()) {
+      clients[clientId] = await repository.getClient(clientId);
+    }
+    return clients;
+  }
+
+  Future<void> _loadSelectedShiftDetails() async {
+    final currentShift = shift;
+    if (currentShift == null) {
+      client = null;
+      shiftTasks = [];
+      progressNotes = [];
+      return;
+    }
+
+    client =
+        scheduleClients[currentShift.clientId] ??
+        await repository.getClient(currentShift.clientId);
+    final selectedClient = client;
+    if (selectedClient != null) {
+      scheduleClients = {
+        ...scheduleClients,
+        currentShift.clientId: selectedClient,
+      };
+    }
+    shiftTasks = await repository.getShiftTasks(currentShift.id);
+    progressNotes = client == null
+        ? []
+        : await repository.getProgressNotes(client!.id);
+  }
+
+  Future<void> selectStaffShift(ShiftAssignment selectedShift) async {
+    await _guard(() async {
+      shift = selectedShift;
+      await _loadSelectedShiftDetails();
+    });
+  }
+
+  Future<void> addStaffDocument({
+    required String title,
+    required String category,
+    required String notes,
+    required String fileUrl,
+    required DateTime? expiresAt,
+    required XFile? file,
+  }) async {
+    final currentUser = user;
+    if (currentUser == null) return;
+
+    await _guard(() async {
+      final uploadedUrl = await repository.uploadStaffDocument(
+        file,
+        currentUser.id,
+      );
+      final documentUrl = fileUrl.trim();
+      await repository.addStaffDocument(
+        StaffDocument(
+          id: appUuid.v4(),
+          staffId: currentUser.id,
+          title: title.trim(),
+          category: category.trim().isEmpty ? 'General' : category.trim(),
+          status: 'Filed',
+          notes: notes.trim(),
+          fileName: file?.name,
+          fileUrl: uploadedUrl ?? (documentUrl.isEmpty ? null : documentUrl),
+          expiresAt: expiresAt,
+          createdAt: DateTime.now(),
+        ),
+      );
+      staffDocuments = await repository.getStaffDocuments(currentUser.id);
+    });
+  }
+
   Future<CheckInResult> performLiveCheckIn() async {
     final currentShift = shift;
     if (currentShift == null) {
       throw StateError('No shift loaded.');
+    }
+    if (currentShift.isEnded) {
+      throw StateError('This shift has already ended.');
     }
 
     return _guardWithResult(() async {
@@ -106,27 +242,112 @@ class CareController extends ChangeNotifier {
     required double longitude,
     required double accuracy,
   }) async {
-    final currentShift = shift!;
-    final distance = Geolocator.distanceBetween(
-      latitude,
-      longitude,
-      currentShift.assignedLatitude,
-      currentShift.assignedLongitude,
+    final currentShift = await _shiftWithAddressCoordinates(shift!);
+    final result = _verifyAssignedLocation(
+      shift: currentShift,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
     );
-    final verified = distance <= 200;
 
     shift = await repository.saveCheckIn(
       shift: currentShift,
       latitude: latitude,
       longitude: longitude,
-      distanceMetres: distance,
-      verified: verified,
+      distanceMetres: result.distanceMetres,
+      verified: result.verified,
     );
     reports = await repository.getReports(staffId: user!.id);
     notifyListeners();
 
+    return result;
+  }
+
+  Future<ShiftAssignment> _shiftWithAddressCoordinates(
+    ShiftAssignment currentShift,
+  ) async {
+    try {
+      final coordinates = await AddressGeocodingService.coordinatesForAddress(
+        currentShift.serviceLocation,
+      );
+      final distanceFromStoredCoordinates = Geolocator.distanceBetween(
+        coordinates.latitude,
+        coordinates.longitude,
+        currentShift.assignedLatitude,
+        currentShift.assignedLongitude,
+      );
+      if (distanceFromStoredCoordinates <= 50) return currentShift;
+
+      final updatedShift = currentShift.copyWith(
+        assignedLatitude: coordinates.latitude,
+        assignedLongitude: coordinates.longitude,
+      );
+      shift = updatedShift;
+      try {
+        await repository.updateShiftAssignedLocation(
+          shiftId: currentShift.id,
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+        );
+      } catch (_) {
+        // Keep the corrected coordinates locally even if the cached shift
+        // document cannot be repaired immediately.
+      }
+      return updatedShift;
+    } catch (_) {
+      return currentShift;
+    }
+  }
+
+  Future<CheckInResult> performLiveCheckOut() async {
+    final currentShift = shift;
+    if (currentShift == null) {
+      throw StateError('No shift loaded.');
+    }
+    if (currentShift.isEnded) {
+      throw StateError('This shift has already ended.');
+    }
+    if (!currentShift.isCheckedIn) {
+      throw StateError('Start the shift before ending it.');
+    }
+
+    return _guardWithResult(() async {
+      final position = await LocationService.currentPosition();
+      final updatedShift = await _shiftWithAddressCoordinates(currentShift);
+      final result = _verifyAssignedLocation(
+        shift: updatedShift,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+      );
+      if (result.verified) {
+        shift = await repository.endShift(
+          updatedShift,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          distanceMetres: result.distanceMetres,
+        );
+        reports = await repository.getReports(staffId: user!.id);
+        notifyListeners();
+      }
+      return result;
+    });
+  }
+
+  CheckInResult _verifyAssignedLocation({
+    required ShiftAssignment shift,
+    required double latitude,
+    required double longitude,
+    required double accuracy,
+  }) {
+    final distance = Geolocator.distanceBetween(
+      latitude,
+      longitude,
+      shift.assignedLatitude,
+      shift.assignedLongitude,
+    );
     return CheckInResult(
-      verified: verified,
+      verified: distance <= locationVerificationRadiusMetres,
       distanceMetres: distance,
       accuracyMetres: accuracy,
       latitude: latitude,
@@ -135,11 +356,7 @@ class CareController extends ChangeNotifier {
   }
 
   Future<void> endShift() async {
-    final currentShift = shift;
-    if (currentShift == null) return;
-    await _guard(() async {
-      shift = await repository.endShift(currentShift);
-    });
+    await performLiveCheckOut();
   }
 
   Future<void> setShiftTaskCompleted(ShiftTask task, bool isCompleted) async {

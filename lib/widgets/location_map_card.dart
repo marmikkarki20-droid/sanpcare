@@ -218,15 +218,377 @@ class LocationMapCard extends StatelessWidget {
   }
 }
 
-class _OpenStreetMapTiles extends StatelessWidget {
-  const _OpenStreetMapTiles({required this.latitude, required this.longitude});
+class LiveLocationMapCard extends StatelessWidget {
+  const LiveLocationMapCard({
+    super.key,
+    required this.assignedAddress,
+    required this.assignedLatitude,
+    required this.assignedLongitude,
+    required this.currentLatitude,
+    required this.currentLongitude,
+    required this.distanceMetres,
+    required this.accuracyMetres,
+    required this.verified,
+  });
 
-  final double latitude;
-  final double longitude;
+  final String assignedAddress;
+  final double assignedLatitude;
+  final double assignedLongitude;
+  final double currentLatitude;
+  final double currentLongitude;
+  final double distanceMetres;
+  final double accuracyMetres;
+  final bool verified;
 
   @override
   Widget build(BuildContext context) {
-    const zoom = 15;
+    final centerLatitude = (assignedLatitude + currentLatitude) / 2;
+    final centerLongitude = (assignedLongitude + currentLongitude) / 2;
+    final zoom = _zoomForDistance(distanceMetres);
+    final statusColor = verified
+        ? const Color(0xFF327A60)
+        : const Color(0xFFC43D32);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 320,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _OpenStreetMapTiles(
+                  latitude: centerLatitude,
+                  longitude: centerLongitude,
+                  zoom: zoom,
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.06),
+                        Colors.black.withValues(alpha: 0.16),
+                      ],
+                    ),
+                  ),
+                ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final assignedOffset = _mapOffsetForLatLng(
+                      size: constraints.biggest,
+                      centerLatitude: centerLatitude,
+                      centerLongitude: centerLongitude,
+                      latitude: assignedLatitude,
+                      longitude: assignedLongitude,
+                      zoom: zoom,
+                    );
+                    final currentOffset = _mapOffsetForLatLng(
+                      size: constraints.biggest,
+                      centerLatitude: centerLatitude,
+                      centerLongitude: centerLongitude,
+                      latitude: currentLatitude,
+                      longitude: currentLongitude,
+                      zoom: zoom,
+                    );
+                    return Stack(
+                      children: [
+                        Positioned(
+                          left: assignedOffset.dx - 31,
+                          top: assignedOffset.dy - 54,
+                          child: const _LiveMapMarker(
+                            label: 'Assigned',
+                            icon: Icons.place_rounded,
+                            color: Color(0xFF12313D),
+                          ),
+                        ),
+                        Positioned(
+                          left: currentOffset.dx - 31,
+                          top: currentOffset.dy - 54,
+                          child: const _LiveMapMarker(
+                            label: 'You',
+                            icon: Icons.my_location_rounded,
+                            color: Color(0xFF008C95),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  top: 14,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x1F000000),
+                          blurRadius: 14,
+                          offset: Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          verified
+                              ? Icons.verified_rounded
+                              : Icons.location_off_rounded,
+                          color: statusColor,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            verified ? 'Location verified' : 'Location failed',
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Live location check',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    _MapStatusPill(
+                      label: verified ? 'Matched' : 'Failed',
+                      color: statusColor,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _LiveMapMetric(
+                  icon: Icons.place_outlined,
+                  label: 'Assigned',
+                  value: assignedAddress,
+                ),
+                _LiveMapMetric(
+                  icon: Icons.my_location_outlined,
+                  label: 'Current GPS',
+                  value:
+                      '${currentLatitude.toStringAsFixed(5)}, ${currentLongitude.toStringAsFixed(5)}',
+                ),
+                _LiveMapMetric(
+                  icon: Icons.social_distance_outlined,
+                  label: 'Distance',
+                  value:
+                      '${distanceMetres.toStringAsFixed(0)} m away, GPS accuracy ${accuracyMetres.toStringAsFixed(0)} m',
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openRouteInGoogleMaps(context),
+                    icon: const Icon(Icons.assistant_direction_outlined),
+                    label: const Text('Open route in Google Maps'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openRouteInGoogleMaps(BuildContext context) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&origin=$currentLatitude,$currentLongitude'
+      '&destination=$assignedLatitude,$assignedLongitude'
+      '&travelmode=walking',
+    );
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Fall through to snackbar.
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Maps is unavailable.')),
+      );
+    }
+  }
+}
+
+class _LiveMapMarker extends StatelessWidget {
+  const _LiveMapMarker({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x26000000),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 12,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 23),
+        ),
+      ],
+    );
+  }
+}
+
+class _LiveMapMetric extends StatelessWidget {
+  const _LiveMapMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 19, color: const Color(0xFF087C89)),
+          const SizedBox(width: 9),
+          SizedBox(
+            width: 86,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF536E7A),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Color(0xFF17262E),
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapStatusPill extends StatelessWidget {
+  const _MapStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.36)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OpenStreetMapTiles extends StatelessWidget {
+  const _OpenStreetMapTiles({
+    required this.latitude,
+    required this.longitude,
+    this.zoom = 15,
+  });
+
+  final double latitude;
+  final double longitude;
+  final int zoom;
+
+  @override
+  Widget build(BuildContext context) {
     const tileSize = 256.0;
     final tile = _MapTileCoordinate.fromLatLng(latitude, longitude, zoom);
 
@@ -313,6 +675,48 @@ class _MapTileCoordinate {
       yFraction: yFloat - y,
     );
   }
+}
+
+Offset _mapOffsetForLatLng({
+  required Size size,
+  required double centerLatitude,
+  required double centerLongitude,
+  required double latitude,
+  required double longitude,
+  required int zoom,
+}) {
+  final center = _globalPixelForLatLng(centerLatitude, centerLongitude, zoom);
+  final target = _globalPixelForLatLng(latitude, longitude, zoom);
+  final offset = Offset(
+    size.width / 2 + target.dx - center.dx,
+    size.height / 2 + target.dy - center.dy,
+  );
+  return Offset(
+    offset.dx.clamp(36.0, size.width - 36.0),
+    offset.dy.clamp(70.0, size.height - 36.0),
+  );
+}
+
+Offset _globalPixelForLatLng(double latitude, double longitude, int zoom) {
+  final safeLatitude = latitude.clamp(-85.05112878, 85.05112878);
+  final latRad = safeLatitude * math.pi / 180;
+  final scale = 256 * math.pow(2, zoom).toDouble();
+  final x = (longitude + 180) / 360 * scale;
+  final y =
+      (1 - math.log(math.tan(latRad) + 1 / math.cos(latRad)) / math.pi) /
+      2 *
+      scale;
+  return Offset(x, y);
+}
+
+int _zoomForDistance(double distanceMetres) {
+  if (distanceMetres <= 300) return 17;
+  if (distanceMetres <= 1200) return 16;
+  if (distanceMetres <= 3500) return 15;
+  if (distanceMetres <= 10000) return 13;
+  if (distanceMetres <= 50000) return 11;
+  if (distanceMetres <= 200000) return 9;
+  return 7;
 }
 
 class _CareMapPainter extends CustomPainter {

@@ -1,24 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../app/care_scope.dart';
 import '../core/navigation.dart';
 import '../models/care_models.dart';
+import '../services/address_geocoding_service.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/admin_mobile_widgets.dart';
 import '../widgets/brand_logo.dart';
-import '../widgets/dashboard_grid.dart';
 import '../widgets/info_widgets.dart';
-import 'admin/admin_dashboard_components.dart';
 import 'admin_create_staff_screen.dart';
 
+part 'admin/admin_mobile_portal.dart';
 part 'admin/admin_roster_screen.dart';
 part 'admin/admin_timesheet_screen.dart';
 
-const _adminNavy = Color(0xFF12313D);
-const _adminSurface = Color(0xFFF5F8FA);
-const _adminMuted = Color(0xFF607783);
-const _adminLine = Color(0xFFDCE8EC);
+const _adminNavy = adminMobileNavy;
+const _adminMuted = adminMobileMuted;
+const _adminLine = adminMobileLine;
+const _adminTopBar = adminMobileTopBar;
 
 String _initials(String value) {
   final parts = value
@@ -34,989 +36,234 @@ String _initials(String value) {
       .toUpperCase();
 }
 
-class AdminDashboardScreen extends StatelessWidget {
+class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final controller = CareScope.of(context);
-    final activeCheckIns = controller.checkIns
-        .where((record) => record.status == 'Verified')
-        .length;
-    final actionRequired = controller.reports
-        .where((report) => report.status == ReportStatus.actionRequired)
-        .length;
-    final incidents = controller.reports
-        .where((report) => report.collection == 'incidentReports')
-        .length;
-    final hazards = controller.reports
-        .where((report) => report.collection == 'hazardReports')
-        .length;
-    final incidentReports = controller.reports
-        .where((report) => report.collection == 'incidentReports')
-        .toList();
-    final hazardReports = controller.reports
-        .where((report) => report.collection == 'hazardReports')
-        .toList();
-    final actionRequiredReports = controller.reports
-        .where((report) => report.status == ReportStatus.actionRequired)
-        .toList();
-    return Scaffold(
-      backgroundColor: _adminSurface,
-      drawer: _AdminPortalDrawer(
-        onCreateStaff: () =>
-            openScreen(context, const AdminCreateStaffScreen()),
-        onScheduler: () => openScreen(context, const AdminRosteringScreen()),
-        onFacilities: () => openScreen(context, const AdminFacilitiesScreen()),
-        onStaff: () => openScreen(context, const AdminStaffDirectoryScreen()),
-        onClients: () =>
-            openScreen(context, const AdminResidentOnboardingScreen()),
-        onTasks: () => openScreen(context, const AdminTaskManagementScreen()),
-        onTimesheets: () => openScreen(
-          context,
-          AdminCheckInsScreen(
-            title: 'Timesheet review',
-            checkIns: controller.checkIns,
-          ),
-        ),
-        onInvoices: () => openScreen(context, const AdminInvoicesScreen()),
-        onIncidents: () => openScreen(
-          context,
-          AdminFilteredReportsScreen(
-            title: 'Incident reports',
-            reports: incidentReports,
-          ),
-        ),
-        onReports: () => openScreen(
-          context,
-          AdminFilteredReportsScreen(
-            title: 'Submitted records',
-            reports: controller.reports,
-          ),
-        ),
+  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  int currentIndex = 0;
+
+  String get title => switch (currentIndex) {
+    0 => 'Admin Dashboard',
+    1 => 'Scheduler',
+    2 => 'Staff',
+    3 => 'Clients',
+    _ => 'Reports',
+  };
+
+  void openMoreMenu() {
+    final rootContext = context;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      barrierColor: const Color(0x6615313D),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
-      appBar: AppBar(
-        toolbarHeight: 76,
-        backgroundColor: _adminNavy,
-        foregroundColor: Colors.white,
-        title: const CareSnapWordmark(compact: true, light: true),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: controller.isBusy ? null : controller.refresh,
-          ),
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () => signOutAndReturnToLogin(context),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
-          child: RefreshIndicator(
-            onRefresh: controller.refresh,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 2, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                AdminDashboardHeader(
-                  activeStaff: activeCheckIns,
-                  actionRequired: actionRequired,
-                  incidents: incidents,
-                  hazards: hazards,
-                ),
-                const SizedBox(height: 14),
-                AdminPriorityPanel(
-                  incidents: incidents,
-                  hazards: hazards,
-                  actionRequired: actionRequired,
-                  activeStaff: activeCheckIns,
-                  onCreateStaff: () =>
-                      openScreen(context, const AdminCreateStaffScreen()),
-                  onAssignShift: () =>
-                      openScreen(context, const AdminAssignShiftScreen()),
-                  onIncidents: () => openScreen(
-                    context,
-                    AdminFilteredReportsScreen(
-                      title: 'Incident reports',
-                      reports: incidentReports,
-                    ),
-                  ),
-                  onHazards: () => openScreen(
-                    context,
-                    AdminFilteredReportsScreen(
-                      title: 'Hazard reports',
-                      reports: hazardReports,
-                    ),
-                  ),
-                  onActionRequired: () => openScreen(
-                    context,
-                    AdminFilteredReportsScreen(
-                      title: 'Action required',
-                      reports: actionRequiredReports,
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(4, 2, 4, 12),
+                    child: Text(
+                      'More',
+                      style: TextStyle(
+                        color: _adminNavy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                SectionHeader(title: 'Admin workspaces'),
-                const SizedBox(height: 12),
-                DashboardGrid(
-                  minTileWidth: 230,
-                  childAspectRatio: 1.7,
-                  children: [
-                    AdminWorkspaceCard(
-                      icon: Icons.calendar_month_outlined,
-                      title: 'Rostering',
-                      subtitle:
-                          'Assign staff to care visits and review coverage.',
-                      color: const Color(0xFF2868D9),
-                      onTap: () =>
-                          openScreen(context, const AdminRosteringScreen()),
-                    ),
-                    AdminWorkspaceCard(
-                      icon: Icons.apartment_outlined,
-                      title: 'Facilities',
-                      subtitle: 'Manage SIL accommodation and service sites.',
-                      color: const Color(0xFF7357C8),
-                      onTap: () =>
-                          openScreen(context, const AdminFacilitiesScreen()),
-                    ),
-                    AdminWorkspaceCard(
-                      icon: Icons.manage_accounts_outlined,
-                      title: 'Staff directory',
-                      subtitle: 'Review active staff and remove access.',
-                      color: const Color(0xFF087C89),
-                      onTap: () => openScreen(
-                        context,
-                        const AdminStaffDirectoryScreen(),
-                      ),
-                    ),
-                    AdminWorkspaceCard(
-                      icon: Icons.elderly_outlined,
-                      title: 'Clients',
-                      subtitle: 'View residents and onboard new profiles.',
-                      color: const Color(0xFF1B9B73),
-                      onTap: () => openScreen(
-                        context,
-                        const AdminResidentOnboardingScreen(),
-                      ),
-                    ),
-                    AdminWorkspaceCard(
-                      icon: Icons.task_alt_outlined,
-                      title: 'Shift tasks',
-                      subtitle: 'Add task items for assigned staff shifts.',
-                      color: const Color(0xFF6F5BD8),
-                      onTap: () => openScreen(
-                        context,
-                        const AdminTaskManagementScreen(),
-                      ),
-                    ),
-                  ],
+                _MoreMenuTile(
+                  icon: Icons.account_circle_outlined,
+                  title: 'Profile',
+                  subtitle: 'Update admin details',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    openScreen(rootContext, const AdminProfileScreen());
+                  },
                 ),
-                const SizedBox(height: 22),
-                SectionHeader(
-                  title: 'Latest submitted records',
-                  trailing: TextButton(
-                    onPressed: () => openScreen(
-                      context,
-                      AdminFilteredReportsScreen(
-                        title: 'Submitted records',
-                        reports: controller.reports,
+                _MoreMenuTile(
+                  icon: Icons.access_time_outlined,
+                  title: 'Attendance',
+                  subtitle: 'Review verified location check-ins',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    openScreen(
+                      rootContext,
+                      AdminCheckInsScreen(
+                        title: 'Attendance',
+                        checkIns: CareScope.of(rootContext).checkIns,
                       ),
-                    ),
-                    child: const Text('View all'),
-                  ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 12),
-                ReportList(
-                  reports: controller.reports.take(4).toList(),
-                  emptyMessage: 'No submitted care records yet.',
-                  embedded: true,
-                  onTap: (report) => openScreen(
-                    context,
-                    AdminReportDetailScreen(report: report),
-                  ),
+                _MoreMenuTile(
+                  icon: Icons.fact_check_outlined,
+                  title: 'Timesheets',
+                  subtitle: 'Approve worked shifts for payroll',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    openScreen(
+                      rootContext,
+                      AdminCheckInsScreen(
+                        title: 'Timesheets',
+                        checkIns: CareScope.of(rootContext).checkIns,
+                      ),
+                    );
+                  },
+                ),
+                _MoreMenuTile(
+                  icon: Icons.settings_outlined,
+                  title: 'Settings',
+                  subtitle: 'Portal settings and account controls',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    showSnack(rootContext, 'Settings will be available soon.');
+                  },
+                ),
+                _MoreMenuTile(
+                  icon: Icons.logout_rounded,
+                  title: 'Logout',
+                  subtitle: 'Sign out of CareSnap admin',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    signOutAndReturnToLogin(rootContext);
+                  },
                 ),
               ],
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
-}
-
-class _AdminPortalDrawer extends StatelessWidget {
-  const _AdminPortalDrawer({
-    required this.onCreateStaff,
-    required this.onScheduler,
-    required this.onFacilities,
-    required this.onStaff,
-    required this.onClients,
-    required this.onTasks,
-    required this.onTimesheets,
-    required this.onInvoices,
-    required this.onIncidents,
-    required this.onReports,
-  });
-
-  final VoidCallback onCreateStaff;
-  final VoidCallback onScheduler;
-  final VoidCallback onFacilities;
-  final VoidCallback onStaff;
-  final VoidCallback onClients;
-  final VoidCallback onTasks;
-  final VoidCallback onTimesheets;
-  final VoidCallback onInvoices;
-  final VoidCallback onIncidents;
-  final VoidCallback onReports;
 
   @override
   Widget build(BuildContext context) {
-    void closeAndRun(VoidCallback action) {
-      Navigator.pop(context);
-      action();
-    }
-
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-              color: _adminNavy,
-              child: const CareSnapWordmark(compact: true, light: true),
+    final controller = CareScope.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: _adminTopBar,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: _adminTopBar,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: adminMobileSurface,
+        appBar: AppBar(
+          toolbarHeight: 88,
+          backgroundColor: _adminTopBar,
+          foregroundColor: Colors.white,
+          iconTheme: const IconThemeData(color: Colors.white),
+          actionsIconTheme: const IconThemeData(color: Colors.white),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: const Color(0x24102B38),
+          systemOverlayStyle: const SystemUiOverlayStyle(
+            statusBarColor: _adminTopBar,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+            systemNavigationBarColor: _adminTopBar,
+            systemNavigationBarIconBrightness: Brightness.light,
+          ),
+          flexibleSpace: const ColoredBox(color: _adminTopBar),
+          leadingWidth: 70,
+          leading: IconButton(
+            tooltip: 'Menu',
+            icon: const Icon(Icons.menu_rounded, size: 32),
+            onPressed: openMoreMenu,
+          ),
+          titleSpacing: 0,
+          title: _AdminAppBarTitle(sectionTitle: title),
+          actions: [
+            _AdminHeaderIconButton(
+              tooltip: 'Refresh',
+              icon: Icons.refresh_rounded,
+              onPressed: controller.isBusy ? null : controller.refresh,
             ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                children: [
-                  _AdminDrawerItem(
-                    icon: Icons.dashboard_outlined,
-                    label: 'Dashboard',
-                    selected: true,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.calendar_month_outlined,
-                    label: 'Scheduler',
-                    onTap: () => closeAndRun(onScheduler),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.apartment_outlined,
-                    label: 'Facilities',
-                    onTap: () => closeAndRun(onFacilities),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.badge_outlined,
-                    label: 'Staff',
-                    onTap: () => closeAndRun(onStaff),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.groups_2_outlined,
-                    label: 'Clients',
-                    onTap: () => closeAndRun(onClients),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.access_time_outlined,
-                    label: 'Timesheet',
-                    onTap: () => closeAndRun(onTimesheets),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.task_alt_outlined,
-                    label: 'Tasks',
-                    onTap: () => closeAndRun(onTasks),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.receipt_long_outlined,
-                    label: 'Invoices',
-                    onTap: () => closeAndRun(onInvoices),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.assignment_outlined,
-                    label: 'Forms',
-                    onTap: () => closeAndRun(onReports),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.report_problem_outlined,
-                    label: 'Incidents',
-                    onTap: () => closeAndRun(onIncidents),
-                  ),
-                  _AdminDrawerItem(
-                    icon: Icons.analytics_outlined,
-                    label: 'Reports',
-                    onTap: () => closeAndRun(onReports),
-                  ),
-                  const Divider(height: 24),
-                  _AdminDrawerItem(
-                    icon: Icons.person_add_alt_1_outlined,
-                    label: 'Create staff',
-                    onTap: () => closeAndRun(onCreateStaff),
-                  ),
-                ],
-              ),
+            _AdminHeaderIconButton(
+              tooltip: 'More',
+              icon: Icons.more_vert_rounded,
+              onPressed: openMoreMenu,
             ),
+            const SizedBox(width: 18),
           ],
+        ),
+        body: SafeArea(
+          child: IndexedStack(
+            index: currentIndex,
+            children: [
+              _AdminMobileDashboardTab(
+                onOpenStaff: () => setState(() => currentIndex = 2),
+                onOpenClients: () => setState(() => currentIndex = 3),
+                onOpenReports: () => setState(() => currentIndex = 4),
+              ),
+              const _AdminMobileSchedulerTab(),
+              const _AdminMobileStaffTab(),
+              const _AdminMobileClientsTab(),
+              const _AdminMobileReportsTab(),
+            ],
+          ),
+        ),
+        bottomNavigationBar: AppBottomNavigation(
+          currentIndex: currentIndex,
+          onDestinationSelected: (index) =>
+              setState(() => currentIndex = index),
         ),
       ),
     );
   }
 }
 
-class _AdminDrawerItem extends StatelessWidget {
-  const _AdminDrawerItem({
+class _MoreMenuTile extends StatelessWidget {
+  const _MoreMenuTile({
     required this.icon,
-    required this.label,
+    required this.title,
+    required this.subtitle,
     required this.onTap,
-    this.selected = false,
   });
 
   final IconData icon;
-  final String label;
+  final String title;
+  final String subtitle;
   final VoidCallback onTap;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: selected ? const Color(0xFFE9EFFB) : Colors.transparent,
+        color: const Color(0xFFF7FAFB),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  color: selected ? const Color(0xFF29306E) : _adminMuted,
-                  size: 21,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: selected ? const Color(0xFF29306E) : _adminNavy,
-                      fontSize: 15,
-                      fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                    ),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: adminMobileAqua,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ),
-                const Icon(
-                  Icons.expand_more_rounded,
-                  size: 18,
-                  color: _adminMuted,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class AdminFacilitiesScreen extends StatefulWidget {
-  const AdminFacilitiesScreen({super.key});
-
-  @override
-  State<AdminFacilitiesScreen> createState() => _AdminFacilitiesScreenState();
-}
-
-class _AdminFacilitiesScreenState extends State<AdminFacilitiesScreen> {
-  final formKey = GlobalKey<FormState>();
-  final nameController = TextEditingController();
-  final addressController = TextEditingController();
-  final roomsController = TextEditingController();
-  final coverageController = TextEditingController();
-  late Future<List<_FacilityRecord>> facilitiesFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    facilitiesFuture = _loadFacilities();
-  }
-
-  @override
-  void dispose() {
-    nameController.dispose();
-    addressController.dispose();
-    roomsController.dispose();
-    coverageController.dispose();
-    super.dispose();
-  }
-
-  Future<List<_FacilityRecord>> _loadFacilities() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('facilities')
-        .limit(50)
-        .get();
-    final facilities =
-        snapshot.docs
-            .map((doc) => _FacilityRecord.fromFirestore(doc.id, doc.data()))
-            .toList()
-          ..sort((a, b) => a.name.compareTo(b.name));
-    return facilities;
-  }
-
-  Future<void> submit() async {
-    if (!formKey.currentState!.validate()) return;
-    await FirebaseFirestore.instance.collection('facilities').add({
-      'name': nameController.text.trim(),
-      'address': addressController.text.trim(),
-      'rooms': roomsController.text.trim(),
-      'coverage': coverageController.text.trim(),
-      'type': 'SIL accommodation',
-      'status': 'Active',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    nameController.clear();
-    addressController.clear();
-    roomsController.clear();
-    coverageController.clear();
-    if (!mounted) return;
-    showSnack(context, 'SIL accommodation added.');
-    setState(() => facilitiesFuture = _loadFacilities());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Facilities',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'SIL accommodations',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: _adminNavy,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Add and manage Supported Independent Living locations.',
-                      style: TextStyle(
-                        color: _adminMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    _AdminTextField(
-                      controller: nameController,
-                      label: 'Accommodation name',
-                      icon: Icons.home_work_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    _AdminTextField(
-                      controller: addressController,
-                      label: 'Address',
-                      icon: Icons.location_on_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _AdminTextField(
-                            controller: roomsController,
-                            label: 'Rooms',
-                            icon: Icons.meeting_room_outlined,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _AdminTextField(
-                            controller: coverageController,
-                            label: 'Coverage',
-                            icon: Icons.schedule_outlined,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: submit,
-                      icon: const Icon(Icons.add_home_work_outlined),
-                      label: const Text('Add accommodation'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SectionHeader(
-            title: 'Accommodation profiles',
-            trailing: IconButton(
-              tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh),
-              onPressed: () =>
-                  setState(() => facilitiesFuture = _loadFacilities()),
-            ),
-          ),
-          const SizedBox(height: 10),
-          FutureBuilder<List<_FacilityRecord>>(
-            future: facilitiesFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: CircularProgressIndicator(),
-                  ),
-                );
-              }
-              final facilities = snapshot.data ?? [];
-              if (facilities.isEmpty) {
-                return const EmptyState(
-                  icon: Icons.apartment_outlined,
-                  message: 'No SIL accommodation profiles have been added yet.',
-                );
-              }
-              return Column(
-                children: facilities
-                    .map(
-                      (facility) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _FacilityCard(facility: facility),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FacilityRecord {
-  const _FacilityRecord({
-    required this.id,
-    required this.name,
-    required this.address,
-    required this.rooms,
-    required this.coverage,
-    required this.status,
-  });
-
-  final String id;
-  final String name;
-  final String address;
-  final String rooms;
-  final String coverage;
-  final String status;
-
-  factory _FacilityRecord.fromFirestore(String id, Map<String, dynamic> data) {
-    return _FacilityRecord(
-      id: id,
-      name: data['name'] as String? ?? 'SIL accommodation',
-      address: data['address'] as String? ?? 'Address pending',
-      rooms: data['rooms'] as String? ?? 'Rooms pending',
-      coverage: data['coverage'] as String? ?? 'Coverage pending',
-      status: data['status'] as String? ?? 'Active',
-    );
-  }
-}
-
-class _FacilityCard extends StatelessWidget {
-  const _FacilityCard({required this.facility});
-
-  final _FacilityRecord facility;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = facility.status == 'Active';
-    return InfoCard(
-      icon: Icons.home_work_outlined,
-      title: facility.name,
-      subtitle: '${facility.address}\n${facility.rooms} • ${facility.coverage}',
-      badge: StatusBadge(
-        label: facility.status,
-        color: active ? const Color(0xFF1B9B73) : const Color(0xFFD37A18),
-      ),
-      onTap: () => showSnack(context, '${facility.name} selected.'),
-    );
-  }
-}
-
-class AdminTaskManagementScreen extends StatefulWidget {
-  const AdminTaskManagementScreen({super.key});
-
-  @override
-  State<AdminTaskManagementScreen> createState() =>
-      _AdminTaskManagementScreenState();
-}
-
-class _AdminTaskManagementScreenState extends State<AdminTaskManagementScreen> {
-  final formKey = GlobalKey<FormState>();
-  final shiftIdController = TextEditingController();
-  final titleController = TextEditingController();
-  final categoryController = TextEditingController(text: 'Shift task');
-  final notesController = TextEditingController();
-  late Future<List<_AdminShiftOption>> shiftsFuture;
-  bool isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    shiftsFuture = _loadShifts();
-  }
-
-  @override
-  void dispose() {
-    shiftIdController.dispose();
-    titleController.dispose();
-    categoryController.dispose();
-    notesController.dispose();
-    super.dispose();
-  }
-
-  Future<List<_AdminShiftOption>> _loadShifts() async {
-    final firestore = FirebaseFirestore.instance;
-    final snapshot = await firestore.collection('shifts').limit(30).get();
-    final shifts = await Future.wait(
-      snapshot.docs.map((doc) async {
-        final data = doc.data();
-        final staffId = data['staffId'] as String? ?? '';
-        final clientId = data['clientId'] as String? ?? '';
-        final staffName = await _nameFor(firestore, 'users', staffId);
-        final clientName = await _nameFor(firestore, 'clients', clientId);
-        return _AdminShiftOption(
-          id: doc.id,
-          staffName: staffName ?? 'Assigned staff',
-          clientName: clientName ?? 'Client',
-          startTime: dateFromFirestore(data['startTime']) ?? DateTime.now(),
-          location: data['serviceLocation'] as String? ?? 'Service location',
-        );
-      }),
-    );
-    shifts.sort((a, b) => a.startTime.compareTo(b.startTime));
-    return shifts;
-  }
-
-  Future<String?> _nameFor(
-    FirebaseFirestore firestore,
-    String collection,
-    String id,
-  ) async {
-    if (id.isEmpty) return null;
-    final doc = await firestore.collection(collection).doc(id).get();
-    final data = doc.data();
-    if (collection == 'users') return data?['fullName'] as String?;
-    return data?['fullName'] as String?;
-  }
-
-  Future<void> submit() async {
-    if (!formKey.currentState!.validate()) return;
-    setState(() => isSaving = true);
-    try {
-      await FirebaseFirestore.instance.collection('shiftTasks').add({
-        'shiftId': shiftIdController.text.trim(),
-        'title': titleController.text.trim(),
-        'category': categoryController.text.trim().isEmpty
-            ? 'Shift task'
-            : categoryController.text.trim(),
-        'notes': notesController.text.trim(),
-        'isCompleted': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      titleController.clear();
-      notesController.clear();
-      if (mounted) {
-        showSnack(context, 'Task added to shift.');
-        setState(() {
-          shiftsFuture = _loadShifts();
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        showSnack(context, error.toString().replaceFirst('Bad state: ', ''));
-      }
-    } finally {
-      if (mounted) setState(() => isSaving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Shift tasks',
-      body: Form(
-        key: formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Add staff task',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Select an assigned shift, then add the task staff should complete.',
-                      style: TextStyle(
-                        color: _adminMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    _AdminTextField(
-                      controller: shiftIdController,
-                      label: 'Selected shift ID',
-                      icon: Icons.event_available_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    _AdminTextField(
-                      controller: titleController,
-                      label: 'Task title',
-                      icon: Icons.task_alt_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    _AdminTextField(
-                      controller: categoryController,
-                      label: 'Category',
-                      icon: Icons.label_outline,
-                    ),
-                    const SizedBox(height: 12),
-                    _AdminTextField(
-                      controller: notesController,
-                      label: 'Task instructions',
-                      icon: Icons.notes_outlined,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: isSaving ? null : submit,
-                        icon: isSaving
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.add_task_outlined),
-                        label: const Text('Add task'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            SectionHeader(
-              title: 'Assigned shifts',
-              trailing: IconButton(
-                tooltip: 'Refresh shifts',
-                icon: const Icon(Icons.refresh),
-                onPressed: () => setState(() => shiftsFuture = _loadShifts()),
-              ),
-            ),
-            const SizedBox(height: 10),
-            FutureBuilder<List<_AdminShiftOption>>(
-              future: shiftsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-                final shifts = snapshot.data ?? [];
-                if (shifts.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.event_busy_outlined,
-                    message: 'No shifts are assigned yet.',
-                  );
-                }
-                return Column(
-                  children: shifts.map((shift) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: InfoCard(
-                        icon: Icons.event_available_outlined,
-                        title:
-                            '${shift.staffName} • ${DateFormat('EEE, d MMM').format(shift.startTime)}',
-                        subtitle:
-                            '${shift.clientName}\n${DateFormat.jm().format(shift.startTime)} • ${shift.location}',
-                        badge: StatusBadge(
-                          label: shiftIdController.text.trim() == shift.id
-                              ? 'Selected'
-                              : 'Use',
-                          color: shiftIdController.text.trim() == shift.id
-                              ? _adminNavy
-                              : _adminMuted,
-                        ),
-                        onTap: () {
-                          setState(() => shiftIdController.text = shift.id);
-                          showSnack(context, 'Shift selected.');
-                        },
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AdminShiftOption {
-  const _AdminShiftOption({
-    required this.id,
-    required this.staffName,
-    required this.clientName,
-    required this.startTime,
-    required this.location,
-  });
-
-  final String id;
-  final String staffName;
-  final String clientName;
-  final DateTime startTime;
-  final String location;
-}
-
-class AdminStaffDirectoryScreen extends StatefulWidget {
-  const AdminStaffDirectoryScreen({super.key});
-
-  @override
-  State<AdminStaffDirectoryScreen> createState() =>
-      _AdminStaffDirectoryScreenState();
-}
-
-class _AdminStaffDirectoryScreenState extends State<AdminStaffDirectoryScreen> {
-  late Future<List<AppUser>> staffFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    staffFuture = _loadStaff();
-  }
-
-  Future<List<AppUser>> _loadStaff() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('role', isEqualTo: 'staff')
-        .limit(50)
-        .get();
-    final staff =
-        snapshot.docs
-            .map((doc) => AppUser.fromFirestore(doc.id, doc.data()))
-            .toList()
-          ..sort((a, b) => a.fullName.compareTo(b.fullName));
-    return staff;
-  }
-
-  Future<void> removeAccess(AppUser staff) async {
-    await FirebaseFirestore.instance.collection('users').doc(staff.id).update({
-      'isActive': false,
-    });
-    if (!mounted) return;
-    showSnack(context, '${staff.fullName} access removed.');
-    setState(() => staffFuture = _loadStaff());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Staff directory',
-      body: FutureBuilder<List<AppUser>>(
-        future: staffFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final staff = snapshot.data ?? [];
-          if (staff.isEmpty) {
-            return const EmptyState(
-              icon: Icons.badge_outlined,
-              message: 'No staff accounts have been created yet.',
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: staff.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final person = staff[index];
-              return _StaffDirectoryCard(
-                name: person.fullName,
-                email: person.email,
-                role: person.position,
-                active: person.isActive,
-                onRemove: person.isActive ? () => removeAccess(person) : null,
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _StaffDirectoryCard extends StatelessWidget {
-  const _StaffDirectoryCard({
-    required this.name,
-    required this.email,
-    required this.role,
-    required this.active,
-    this.onRemove,
-  });
-
-  final String name;
-  final String email;
-  final String role;
-  final bool active;
-  final VoidCallback? onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: Color(0xFFE6F3F5),
-                  child: Icon(Icons.badge_outlined, color: _adminNavy),
+                  child: Icon(icon, color: adminMobileTeal, size: 21),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1024,42 +271,327 @@ class _StaffDirectoryCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        name,
+                        title,
                         style: const TextStyle(
                           color: _adminNavy,
-                          fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
-                        email,
+                        subtitle,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _adminMuted),
+                        style: const TextStyle(
+                          color: _adminMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                StatusBadge(
-                  label: active ? 'Active' : 'Inactive',
-                  color: active
-                      ? const Color(0xFF1B9B73)
-                      : const Color(0xFF7C8790),
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: _adminMuted,
+                  size: 14,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              role,
-              style: const TextStyle(
-                color: _adminMuted,
-                fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminHeaderIconButton extends StatelessWidget {
+  const _AdminHeaderIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white.withValues(alpha: 0.42),
+          fixedSize: const Size(46, 46),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        icon: Icon(icon, size: 29),
+      ),
+    );
+  }
+}
+
+class _AdminAppBarTitle extends StatelessWidget {
+  const _AdminAppBarTitle({required this.sectionTitle});
+
+  final String sectionTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x2400161C),
+                blurRadius: 14,
+                offset: Offset(0, 7),
+              ),
+            ],
+          ),
+          child: const CareSnapMark(size: 42),
+        ),
+        const SizedBox(width: 14),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'CareSnap',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                sectionTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFD5E6EC),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AdminProfileScreen extends StatefulWidget {
+  const AdminProfileScreen({super.key});
+
+  @override
+  State<AdminProfileScreen> createState() => _AdminProfileScreenState();
+}
+
+class _AdminProfileScreenState extends State<AdminProfileScreen> {
+  final formKey = GlobalKey<FormState>();
+  final fullNameController = TextEditingController();
+  final positionController = TextEditingController();
+  final facilityController = TextEditingController();
+  bool initialised = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (initialised) return;
+    final user = CareScope.of(context).user;
+    fullNameController.text = user?.fullName ?? '';
+    positionController.text = user?.position ?? '';
+    facilityController.text = user?.facilityId ?? '';
+    initialised = true;
+  }
+
+  @override
+  void dispose() {
+    fullNameController.dispose();
+    positionController.dispose();
+    facilityController.dispose();
+    super.dispose();
+  }
+
+  Future<void> saveProfile() async {
+    if (!formKey.currentState!.validate()) return;
+    final controller = CareScope.of(context);
+    try {
+      await controller.updateCurrentUserProfile(
+        fullName: fullNameController.text,
+        position: positionController.text,
+        facilityId: facilityController.text,
+      );
+      if (!mounted) return;
+      showSnack(context, 'Profile updated.');
+      Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) return;
+      showSnack(context, controller.error ?? 'Could not update profile.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = CareScope.of(context);
+    final user = controller.user;
+    if (user == null) {
+      return const AppScaffold(
+        title: 'Profile',
+        body: EmptyState(
+          icon: Icons.account_circle_outlined,
+          message: 'Profile is unavailable.',
+        ),
+      );
+    }
+
+    return AppScaffold(
+      title: 'Profile',
+      maxWidth: 560,
+      body: Form(
+        key: formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF12313D),
+                    Color(0xFF087C89),
+                    Color(0xFF2563B8),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x24102B38),
+                    blurRadius: 18,
+                    offset: Offset(0, 9),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                    child: Text(
+                      _initials(user.fullName),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          user.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xD9FFFFFF),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const StatusBadge(label: 'Admin', color: Color(0xFFF1A73A)),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: onRemove,
-              icon: const Icon(Icons.person_remove_outlined),
-              label: const Text('Remove access'),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: fullNameController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.badge_outlined),
+                        labelText: 'Full name',
+                      ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Full name is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: positionController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.work_outline),
+                        labelText: 'Role or position',
+                      ),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? 'Position is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: facilityController,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.business_outlined),
+                        labelText: 'Facility',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(
+              label: 'Save profile',
+              icon: controller.isBusy
+                  ? Icons.hourglass_top_rounded
+                  : Icons.check_rounded,
+              onPressed: controller.isBusy ? null : saveProfile,
             ),
           ],
         ),
@@ -1355,12 +887,14 @@ class _AdminTextField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.icon,
+    this.hintText,
     this.maxLines = 1,
   });
 
   final TextEditingController controller;
   final String label;
   final IconData icon;
+  final String? hintText;
   final int maxLines;
 
   @override
@@ -1369,62 +903,48 @@ class _AdminTextField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(prefixIcon: Icon(icon), labelText: label),
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon),
+        labelText: label,
+        hintText: hintText,
+      ),
       validator: (value) =>
           value == null || value.trim().isEmpty ? '$label is required' : null,
     );
   }
 }
 
-class AdminFilteredReportsScreen extends StatelessWidget {
-  const AdminFilteredReportsScreen({
-    super.key,
-    required this.title,
-    required this.reports,
-  });
-
-  final String title;
-  final List<ReportSummary> reports;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: title,
-      body: ReportList(
-        reports: reports,
-        emptyMessage: 'No records found.',
-        onTap: (report) =>
-            openScreen(context, AdminReportDetailScreen(report: report)),
-      ),
-    );
-  }
-}
-
-class AdminInvoicesScreen extends StatelessWidget {
-  const AdminInvoicesScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScaffold(
-      title: 'Invoices',
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: const [
-          EmptyState(
-            icon: Icons.receipt_long_outlined,
-            message:
-                'No invoices have been generated yet. Approved timesheets will appear here for billing review.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class AdminReportDetailScreen extends StatelessWidget {
+class AdminReportDetailScreen extends StatefulWidget {
   const AdminReportDetailScreen({super.key, required this.report});
 
   final ReportSummary report;
+
+  @override
+  State<AdminReportDetailScreen> createState() =>
+      _AdminReportDetailScreenState();
+}
+
+class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
+  late ReportStatus selectedStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedStatus = widget.report.status;
+  }
+
+  Future<void> updateStatus(ReportStatus status) async {
+    final controller = CareScope.of(context);
+    if (widget.report.id.startsWith('sample-')) {
+      showSnack(context, 'Sample report marked ${status.label}.');
+      Navigator.pop(context);
+      return;
+    }
+    await controller.updateReportStatus(widget.report, status);
+    if (!mounted) return;
+    showSnack(context, 'Status updated to ${status.label}.');
+    Navigator.pop(context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1434,12 +954,14 @@ class AdminReportDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _ReportReviewHeader(report: report),
+          _ReportReviewHeader(report: widget.report),
           const SizedBox(height: 12),
-          _ReportDetailsCard(report: report),
-          if (report.imageUrl != null) ...[
+          _ReportSummaryActionCard(report: widget.report),
+          const SizedBox(height: 12),
+          _ReportDetailsCard(report: widget.report),
+          if (widget.report.imageUrl != null) ...[
             const SizedBox(height: 12),
-            _ReportEvidenceCard(imageUrl: report.imageUrl!),
+            _ReportEvidenceCard(imageUrl: widget.report.imageUrl!),
           ],
           const SizedBox(height: 18),
           Card(
@@ -1455,39 +977,122 @@ class AdminReportDetailScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ...ReportStatus.values.map(
-                    (status) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: OutlinedButton.icon(
-                        onPressed: controller.isBusy
-                            ? null
-                            : () async {
-                                await controller.updateReportStatus(
-                                  report,
-                                  status,
-                                );
-                                if (context.mounted) {
-                                  showSnack(
-                                    context,
-                                    'Status updated to ${status.label}.',
-                                  );
-                                  Navigator.pop(context);
-                                }
-                              },
-                        icon: Icon(
-                          status == report.status
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                        ),
-                        label: Text(status.label),
-                      ),
+                  DropdownButtonFormField<ReportStatus>(
+                    initialValue: selectedStatus,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.rule_outlined),
+                      labelText: 'Status update',
                     ),
+                    items: ReportStatus.values
+                        .where((status) => status != ReportStatus.newReport)
+                        .map(
+                          (status) => DropdownMenuItem(
+                            value: status,
+                            child: Text(status.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: controller.isBusy
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() => selectedStatus = value);
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  PrimaryButton(
+                    label: 'Mark Under Review',
+                    icon: Icons.rate_review_outlined,
+                    filled: false,
+                    onPressed: controller.isBusy
+                        ? null
+                        : () => updateStatus(ReportStatus.underReview),
+                  ),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Mark Action Required',
+                    icon: Icons.flag_outlined,
+                    onPressed: controller.isBusy
+                        ? null
+                        : () => updateStatus(ReportStatus.actionRequired),
+                  ),
+                  const SizedBox(height: 10),
+                  PrimaryButton(
+                    label: 'Mark Resolved',
+                    icon: Icons.check_circle_outline,
+                    filled: false,
+                    onPressed: controller.isBusy
+                        ? null
+                        : () => updateStatus(ReportStatus.resolved),
                   ),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReportSummaryActionCard extends StatelessWidget {
+  const _ReportSummaryActionCard({required this.report});
+
+  final ReportSummary report;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = report.subtitle.trim().isNotEmpty
+        ? report.subtitle
+        : report.details['Description'] ??
+              report.details['Shift summary'] ??
+              report.details['Behaviour observed'] ??
+              'No written summary has been supplied.';
+    final actionTaken =
+        report.details['Action taken'] ??
+        report.details['Staff response'] ??
+        report.details['Follow-up'] ??
+        'No action has been recorded yet.';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Report summary',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              summary,
+              style: const TextStyle(
+                color: _adminNavy,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Divider(height: 26),
+            Text(
+              'Action taken',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              actionTaken,
+              style: const TextStyle(
+                color: _adminNavy,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

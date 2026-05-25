@@ -76,6 +76,25 @@ class AppUser {
       isActive: data['isActive'] as bool? ?? true,
     );
   }
+
+  AppUser copyWith({
+    String? fullName,
+    String? email,
+    UserRole? role,
+    String? position,
+    String? facilityId,
+    bool? isActive,
+  }) {
+    return AppUser(
+      id: id,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      role: role ?? this.role,
+      position: position ?? this.position,
+      facilityId: facilityId ?? this.facilityId,
+      isActive: isActive ?? this.isActive,
+    );
+  }
 }
 
 class ClientProfile {
@@ -149,6 +168,8 @@ class ShiftAssignment {
   bool get isEnded => shiftStatus == 'Ended';
 
   ShiftAssignment copyWith({
+    double? assignedLatitude,
+    double? assignedLongitude,
     double? checkInLatitude,
     double? checkInLongitude,
     String? checkInStatus,
@@ -161,8 +182,8 @@ class ShiftAssignment {
       startTime: startTime,
       endTime: endTime,
       serviceLocation: serviceLocation,
-      assignedLatitude: assignedLatitude,
-      assignedLongitude: assignedLongitude,
+      assignedLatitude: assignedLatitude ?? this.assignedLatitude,
+      assignedLongitude: assignedLongitude ?? this.assignedLongitude,
       checkInLatitude: checkInLatitude ?? this.checkInLatitude,
       checkInLongitude: checkInLongitude ?? this.checkInLongitude,
       checkInStatus: checkInStatus ?? this.checkInStatus,
@@ -579,6 +600,59 @@ class ReportSummary {
       clientName: clientName,
       details: details,
       imageUrl: imageUrl,
+    );
+  }
+}
+
+class StaffDocument {
+  const StaffDocument({
+    required this.id,
+    required this.staffId,
+    required this.title,
+    required this.category,
+    required this.status,
+    required this.createdAt,
+    this.notes = '',
+    this.fileName,
+    this.fileUrl,
+    this.expiresAt,
+  });
+
+  final String id;
+  final String staffId;
+  final String title;
+  final String category;
+  final String status;
+  final DateTime createdAt;
+  final String notes;
+  final String? fileName;
+  final String? fileUrl;
+  final DateTime? expiresAt;
+
+  Map<String, dynamic> toFirestore() => {
+    'staffId': staffId,
+    'title': title,
+    'category': category,
+    'status': status,
+    'notes': notes,
+    'fileName': fileName,
+    'fileUrl': fileUrl,
+    'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt!),
+    'createdAt': Timestamp.fromDate(createdAt),
+  };
+
+  factory StaffDocument.fromFirestore(String id, Map<String, dynamic> data) {
+    return StaffDocument(
+      id: id,
+      staffId: data['staffId'] as String? ?? '',
+      title: data['title'] as String? ?? 'Untitled document',
+      category: data['category'] as String? ?? 'General',
+      status: data['status'] as String? ?? 'Filed',
+      notes: data['notes'] as String? ?? '',
+      fileName: data['fileName'] as String?,
+      fileUrl: data['fileUrl'] as String?,
+      expiresAt: dateFromFirestore(data['expiresAt']),
+      createdAt: dateFromFirestore(data['createdAt']) ?? DateTime.now(),
     );
   }
 }

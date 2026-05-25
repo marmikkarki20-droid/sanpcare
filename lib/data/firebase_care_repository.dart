@@ -48,6 +48,11 @@ class FirebaseCareRepository implements CareRepository {
   }
 
   @override
+  Future<void> sendPasswordResetEmail(String email) {
+    return _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
+  }
+
+  @override
   Future<void> signOut() => _auth.signOut();
 
   @override
@@ -88,6 +93,36 @@ class FirebaseCareRepository implements CareRepository {
     return AppUser.fromFirestore(staffUser.uid, profile);
   }
 
+  @override
+  Future<AppUser> updateCurrentUserProfile({
+    required String fullName,
+    required String position,
+    required String facilityId,
+  }) async {
+    final authUser = _auth.currentUser;
+    if (authUser == null) {
+      throw StateError('No signed-in user was found.');
+    }
+
+    final profile = <String, dynamic>{
+      'fullName': fullName.trim(),
+      'position': position.trim(),
+      'facilityId': facilityId.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    await _firestore
+        .collection('users')
+        .doc(authUser.uid)
+        .set(profile, SetOptions(merge: true));
+    await authUser.updateDisplayName(fullName.trim());
+
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(authUser.uid)
+        .get();
+    return AppUser.fromFirestore(authUser.uid, snapshot.data() ?? profile);
+  }
+
   Future<firebase_auth.FirebaseAuth> _staffProvisioningAuth() async {
     const appName = 'careSnapStaffProvisioning';
     FirebaseApp app;
@@ -126,6 +161,39 @@ class FirebaseCareRepository implements CareRepository {
       if (shift.endTime.isAfter(now)) return shift;
     }
     return shifts.firstOrNull;
+  }
+
+  @override
+  Future<List<ShiftAssignment>> getStaffShifts({
+    required String staffId,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final snapshot = await _firestore
+        .collection('shifts')
+        .where('staffId', isEqualTo: staffId)
+        .limit(200)
+        .get();
+    final rangeStart = DateTime(start.year, start.month, start.day);
+    final rangeEnd = DateTime(
+      end.year,
+      end.month,
+      end.day,
+    ).add(const Duration(days: 1));
+    final shifts =
+        snapshot.docs
+            .map((doc) => ShiftAssignment.fromFirestore(doc.id, doc.data()))
+            .where((shift) {
+              final day = DateTime(
+                shift.startTime.year,
+                shift.startTime.month,
+                shift.startTime.day,
+              );
+              return !day.isBefore(rangeStart) && day.isBefore(rangeEnd);
+            })
+            .toList()
+          ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    return shifts;
   }
 
   @override
@@ -330,6 +398,40 @@ class FirebaseCareRepository implements CareRepository {
   }
 
   @override
+  Future<List<StaffDocument>> getStaffDocuments(String staffId) async {
+    final snapshot = await _firestore
+        .collection('staffDocuments')
+        .where('staffId', isEqualTo: staffId)
+        .limit(80)
+        .get();
+    final documents = snapshot.docs
+        .map((doc) => StaffDocument.fromFirestore(doc.id, doc.data()))
+        .toList();
+    documents.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return documents;
+  }
+
+  @override
+  Future<String?> uploadStaffDocument(XFile? document, String staffId) async {
+    if (document == null) return null;
+    final bytes = await document.readAsBytes();
+    final extension = document.name.split('.').lastOrNull ?? 'jpg';
+    final ref = _storage.ref(
+      'staffDocuments/$staffId/${DateTime.now().millisecondsSinceEpoch}.$extension',
+    );
+    await ref.putData(
+      bytes,
+      SettableMetadata(contentType: document.mimeType ?? 'image/jpeg'),
+    );
+    return ref.getDownloadURL();
+  }
+
+  @override
+  Future<void> addStaffDocument(StaffDocument document) async {
+    await _firestore.collection('staffDocuments').add(document.toFirestore());
+  }
+
+  @override
   Future<ShiftAssignment> saveCheckIn({
     required ShiftAssignment shift,
     required double latitude,
@@ -368,12 +470,52 @@ class FirebaseCareRepository implements CareRepository {
   }
 
   @override
-  Future<ShiftAssignment> endShift(ShiftAssignment shift) async {
+  Future<void> updateShiftAssignedLocation({
+    required String shiftId,
+    required double latitude,
+    required double longitude,
+  }) {
+    return _firestore.collection('shifts').doc(shiftId).update({
+      'assignedLatitude': latitude,
+      'assignedLongitude': longitude,
+      'assignedLocationUpdatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<ShiftAssignment> endShift(
+    ShiftAssignment shift, {
+    double? latitude,
+    double? longitude,
+    double? distanceMetres,
+  }) async {
     final updated = shift.copyWith(shiftStatus: 'Ended');
-    await _firestore.collection('shifts').doc(shift.id).update({
+    final updateData = <String, dynamic>{
       'shiftStatus': 'Ended',
       'endedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (latitude != null) updateData['checkOutLatitude'] = latitude;
+    if (longitude != null) updateData['checkOutLongitude'] = longitude;
+    if (distanceMetres != null) {
+      updateData['checkOutDistanceMetres'] = distanceMetres;
+    }
+    await _firestore.collection('shifts').doc(shift.id).update(updateData);
+    if (latitude != null && longitude != null && distanceMetres != null) {
+      await _firestore
+          .collection('checkIns')
+          .add(
+            CheckInRecord(
+              id: '',
+              staffId: shift.staffId,
+              shiftId: shift.id,
+              status: 'Checked Out',
+              latitude: latitude,
+              longitude: longitude,
+              distanceMetres: distanceMetres,
+              createdAt: DateTime.now(),
+            ).toFirestore(),
+          );
+    }
     return updated;
   }
 

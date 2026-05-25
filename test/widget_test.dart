@@ -14,6 +14,9 @@ class EmptyTestRepository implements CareRepository {
   }
 
   @override
+  Future<void> sendPasswordResetEmail(String email) async {}
+
+  @override
   Future<void> signOut() async {}
 
   @override
@@ -27,7 +30,23 @@ class EmptyTestRepository implements CareRepository {
   }
 
   @override
+  Future<AppUser> updateCurrentUserProfile({
+    required String fullName,
+    required String position,
+    required String facilityId,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<ShiftAssignment?> getTodaysShift(String staffId) async => null;
+
+  @override
+  Future<List<ShiftAssignment>> getStaffShifts({
+    required String staffId,
+    required DateTime start,
+    required DateTime end,
+  }) async => [];
 
   @override
   Future<ClientProfile> getClient(String clientId) {
@@ -53,6 +72,16 @@ class EmptyTestRepository implements CareRepository {
   Future<List<CheckInRecord>> getCheckIns() async => [];
 
   @override
+  Future<List<StaffDocument>> getStaffDocuments(String staffId) async => [];
+
+  @override
+  Future<String?> uploadStaffDocument(XFile? document, String staffId) async =>
+      null;
+
+  @override
+  Future<void> addStaffDocument(StaffDocument document) async {}
+
+  @override
   Future<ShiftAssignment> saveCheckIn({
     required ShiftAssignment shift,
     required double latitude,
@@ -64,7 +93,19 @@ class EmptyTestRepository implements CareRepository {
   }
 
   @override
-  Future<ShiftAssignment> endShift(ShiftAssignment shift) async => shift;
+  Future<void> updateShiftAssignedLocation({
+    required String shiftId,
+    required double latitude,
+    required double longitude,
+  }) async {}
+
+  @override
+  Future<ShiftAssignment> endShift(
+    ShiftAssignment shift, {
+    double? latitude,
+    double? longitude,
+    double? distanceMetres,
+  }) async => shift;
 
   @override
   Future<void> submitProgressNote(ProgressNote note) async {}

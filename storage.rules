@@ -28,6 +28,14 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    match /staffDocuments/{staffId}/{fileName} {
+      allow read: if signedIn() && (request.auth.uid == staffId || isAdmin());
+      allow write: if signedIn()
+        && request.auth.uid == staffId
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     match /{allPaths=**} {
       allow read, write: if isAdmin();
     }

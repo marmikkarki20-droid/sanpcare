@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/care_scope.dart';
-import '../controllers/care_controller.dart';
+import '../controllers/care_controller.dart' show CheckInResult;
 import '../core/navigation.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/info_widgets.dart';
@@ -16,15 +16,24 @@ class GpsCheckInScreen extends StatefulWidget {
 
 class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
   CheckInResult? result;
+  bool resultWasCheckOut = false;
 
-  Future<void> runCheckIn() async {
+  Future<void> runVerification() async {
     final controller = CareScope.of(context);
+    final shift = controller.shift;
+    if (shift == null) return;
+    final checkingOut = shift.isCheckedIn && !shift.isEnded;
     try {
-      final nextResult = await controller.performLiveCheckIn();
-      setState(() => result = nextResult);
+      final nextResult = checkingOut
+          ? await controller.performLiveCheckOut()
+          : await controller.performLiveCheckIn();
+      setState(() {
+        result = nextResult;
+        resultWasCheckOut = checkingOut;
+      });
     } catch (_) {
       if (mounted) {
-        showSnack(context, controller.error ?? 'Unable to check location.');
+        showSnack(context, controller.error ?? 'Could not update attendance.');
       }
     }
   }
@@ -35,7 +44,7 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
     final shift = controller.shift;
     if (shift == null) {
       return const AppScaffold(
-        title: 'GPS check-in',
+        title: 'Verify location',
         body: EmptyState(
           icon: Icons.location_off_outlined,
           message: 'No shift location has been assigned yet.',
@@ -44,54 +53,111 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
     }
     final activeResult = result;
     final checkedIn = shift.isCheckedIn;
+    final ended = shift.isEnded;
+    final checkingOut = checkedIn && !ended;
+    final verificationPassed = activeResult?.verified ?? false;
 
     return AppScaffold(
-      title: 'GPS check-in',
+      title: 'Verify location',
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          LocationMapCard(
-            title: 'Assigned care visit location',
-            address: shift.serviceLocation,
-            latitude: shift.assignedLatitude,
-            longitude: shift.assignedLongitude,
-            badge: StatusBadge(
-              label: shift.checkInStatus,
-              color: checkedIn
-                  ? const Color(0xFF327A60)
-                  : const Color(0xFFD37A18),
+          if (activeResult == null)
+            LocationMapCard(
+              title: 'Assigned care visit location',
+              address: shift.serviceLocation,
+              latitude: shift.assignedLatitude,
+              longitude: shift.assignedLongitude,
+              badge: StatusBadge(
+                label: ended
+                    ? 'Clocked out'
+                    : checkedIn
+                    ? 'Clocked in'
+                    : shift.checkInStatus == 'Failed'
+                    ? 'Location failed'
+                    : 'Pending',
+                color: checkedIn || ended
+                    ? const Color(0xFF327A60)
+                    : shift.checkInStatus == 'Failed'
+                    ? const Color(0xFFC43D32)
+                    : const Color(0xFFD37A18),
+              ),
+            )
+          else
+            LiveLocationMapCard(
+              assignedAddress: shift.serviceLocation,
+              assignedLatitude: shift.assignedLatitude,
+              assignedLongitude: shift.assignedLongitude,
+              currentLatitude: activeResult.latitude,
+              currentLongitude: activeResult.longitude,
+              distanceMetres: activeResult.distanceMetres,
+              accuracyMetres: activeResult.accuracyMetres,
+              verified: activeResult.verified,
             ),
-          ),
           const SizedBox(height: 16),
           if (activeResult != null)
-            _CheckInResultCard(result: activeResult)
+            _CheckInResultCard(
+              result: activeResult,
+              isCheckOut: resultWasCheckOut,
+            )
+          else if (ended)
+            InfoCard(
+              icon: Icons.task_alt_outlined,
+              title: 'Clocked out',
+              subtitle: '',
+              badge: const StatusBadge(
+                label: 'Clocked out',
+                color: Color(0xFF327A60),
+              ),
+            )
           else if (checkedIn)
             InfoCard(
-              icon: Icons.verified_outlined,
-              title: 'Shift started successfully.',
-              subtitle: 'You are checked in at the assigned location.',
+              icon: Icons.logout_outlined,
+              title: 'Clock out',
+              subtitle: '',
               badge: const StatusBadge(
-                label: 'Checked In',
+                label: 'Clocked in',
                 color: Color(0xFF327A60),
               ),
             )
           else
-            const InfoCard(
+            InfoCard(
               icon: Icons.location_searching,
-              title: 'Ready to verify location',
-              subtitle:
-                  'GPS will compare this device location with the assigned shift location.',
+              title: 'Clock in',
+              subtitle: '',
             ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: controller.isBusy || checkedIn ? null : runCheckIn,
+            onPressed: controller.isBusy || (ended && !verificationPassed)
+                ? null
+                : verificationPassed
+                ? () => Navigator.of(context).pop(true)
+                : runVerification,
             icon: controller.isBusy
                 ? const SizedBox.square(
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.my_location),
-            label: const Text('Verify live GPS'),
+                : Icon(
+                    verificationPassed
+                        ? Icons.check_circle_outline
+                        : activeResult == null
+                        ? Icons.map_outlined
+                        : Icons.refresh_rounded,
+                  ),
+            label: Text(
+              verificationPassed
+                  ? resultWasCheckOut
+                        ? 'Finish clock out'
+                        : 'Continue to shift'
+                  : ended
+                  ? 'Clocked out'
+                  : activeResult != null
+                  ? 'Check again'
+                  : checkingOut
+                  ? 'Verify location'
+                  : 'Verify location',
+            ),
           ),
         ],
       ),
@@ -100,9 +166,10 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
 }
 
 class _CheckInResultCard extends StatelessWidget {
-  const _CheckInResultCard({required this.result});
+  const _CheckInResultCard({required this.result, required this.isCheckOut});
 
   final CheckInResult result;
+  final bool isCheckOut;
 
   @override
   Widget build(BuildContext context) {
@@ -110,13 +177,17 @@ class _CheckInResultCard extends StatelessWidget {
     return InfoCard(
       icon: verified ? Icons.verified_outlined : Icons.location_off_outlined,
       title: verified
-          ? 'Shift started successfully.'
-          : 'You are outside the assigned shift location.',
-      subtitle: verified
-          ? 'Distance ${result.distanceMetres.toStringAsFixed(0)} m, GPS accuracy ${result.accuracyMetres.toStringAsFixed(0)} m.'
-          : 'Distance ${result.distanceMetres.toStringAsFixed(0)} m. Please move closer or contact your supervisor.',
+          ? isCheckOut
+                ? 'Clocked out'
+                : 'Clocked in'
+          : 'Location failed',
+      subtitle: '',
       badge: StatusBadge(
-        label: verified ? 'Verified' : 'Failed',
+        label: verified
+            ? isCheckOut
+                  ? 'Clocked out'
+                  : 'Clocked in'
+            : 'Failed',
         color: verified ? const Color(0xFF327A60) : const Color(0xFFC43D32),
       ),
     );
