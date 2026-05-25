@@ -196,9 +196,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: controller.isBusy ? null : controller.refresh,
             ),
             _AdminHeaderIconButton(
-              tooltip: 'More',
-              icon: Icons.more_vert_rounded,
-              onPressed: openMoreMenu,
+              tooltip: 'Notifications',
+              icon: Icons.notifications_none_rounded,
+              onPressed: () =>
+                  showSnack(context, 'No new admin notifications.'),
             ),
             const SizedBox(width: 18),
           ],
