@@ -337,6 +337,7 @@ class ReportCard extends StatelessWidget {
     required this.severity,
     required this.status,
     required this.statusColor,
+    this.hasPhoto = false,
     this.onTap,
   });
 
@@ -348,6 +349,7 @@ class ReportCard extends StatelessWidget {
   final String severity;
   final String status;
   final Color statusColor;
+  final bool hasPhoto;
   final VoidCallback? onTap;
 
   @override
@@ -367,6 +369,11 @@ class ReportCard extends StatelessWidget {
         _CardLine(icon: Icons.badge_outlined, text: staffName),
         _CardLine(icon: Icons.schedule_outlined, text: dateTime),
         _CardLine(icon: Icons.priority_high_outlined, text: severity),
+        if (hasPhoto)
+          const _CardLine(
+            icon: Icons.photo_camera_outlined,
+            text: 'Photo attached',
+          ),
       ],
     );
   }

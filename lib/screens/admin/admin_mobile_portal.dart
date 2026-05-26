@@ -2603,6 +2603,7 @@ Widget _reportCardFromSummary(
     severity: _reportSeverity(report),
     status: _adminReportStatusLabel(report.status),
     statusColor: report.status.color,
+    hasPhoto: report.imageUrl?.trim().isNotEmpty ?? false,
     onTap: onTap,
   );
 }

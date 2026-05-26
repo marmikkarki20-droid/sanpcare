@@ -950,6 +950,7 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
+    final evidenceUrl = widget.report.imageUrl?.trim();
     return AppScaffold(
       title: 'Report review',
       body: ListView(
@@ -960,9 +961,9 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
           _ReportSummaryActionCard(report: widget.report),
           const SizedBox(height: 12),
           _ReportDetailsCard(report: widget.report),
-          if (widget.report.imageUrl != null) ...[
+          if (evidenceUrl != null && evidenceUrl.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _ReportEvidenceCard(imageUrl: widget.report.imageUrl!),
+            _ReportEvidenceCard(imageUrl: evidenceUrl),
           ],
           const SizedBox(height: 18),
           Card(
@@ -985,7 +986,6 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                       labelText: 'Status update',
                     ),
                     items: ReportStatus.values
-                        .where((status) => status != ReportStatus.newReport)
                         .map(
                           (status) => DropdownMenuItem(
                             value: status,
@@ -1249,6 +1249,27 @@ class _ReportEvidenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canPreview = imageUrl.startsWith('http');
+    void openViewer() =>
+        openScreen(context, _ReportEvidenceViewer(imageUrl: imageUrl));
+    final preview = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        imageUrl,
+        width: double.infinity,
+        height: 280,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            height: 280,
+            alignment: Alignment.center,
+            color: const Color(0xFFEAF6F8),
+            child: const CircularProgressIndicator(),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => const _ImageError(),
+      ),
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1269,25 +1290,23 @@ class _ReportEvidenceCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (canPreview)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  imageUrl,
-                  width: double.infinity,
-                  height: 260,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      height: 260,
-                      alignment: Alignment.center,
-                      color: const Color(0xFFEAF6F8),
-                      child: const CircularProgressIndicator(),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) =>
-                      const _ImageError(),
-                ),
+              Stack(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: openViewer,
+                    child: preview,
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: IconButton.filledTonal(
+                      tooltip: 'View full photo',
+                      icon: const Icon(Icons.open_in_full_outlined),
+                      onPressed: openViewer,
+                    ),
+                  ),
+                ],
               )
             else
               const _ImageError(),
@@ -1298,22 +1317,78 @@ class _ReportEvidenceCard extends StatelessWidget {
   }
 }
 
+class _ReportEvidenceViewer extends StatelessWidget {
+  const _ReportEvidenceViewer({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _adminNavy,
+      appBar: AppBar(
+        backgroundColor: _adminNavy,
+        foregroundColor: Colors.white,
+        title: const Text('Photo evidence'),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            minScale: 0.8,
+            maxScale: 4,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) =>
+                  const _ImageError.fullScreen(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ImageError extends StatelessWidget {
-  const _ImageError();
+  const _ImageError()
+    : margin = EdgeInsets.zero,
+      backgroundColor = const Color(0xFFFFF7E8),
+      border = const Border.fromBorderSide(
+        BorderSide(color: Color(0xFFF3CF8A)),
+      ),
+      textColor = const Color(0xFF8A5A00);
+
+  const _ImageError.fullScreen()
+    : margin = const EdgeInsets.all(20),
+      backgroundColor = Colors.white,
+      border = null,
+      textColor = _adminNavy;
+
+  final EdgeInsetsGeometry margin;
+  final Color backgroundColor;
+  final BoxBorder? border;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: margin,
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7E8),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFF3CF8A)),
+        border: border,
       ),
-      child: const Text(
+      child: Text(
         'Image preview is unavailable for this record.',
-        style: TextStyle(color: Color(0xFF8A5A00), fontWeight: FontWeight.w700),
+        style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
       ),
     );
   }
