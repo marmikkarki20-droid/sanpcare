@@ -581,6 +581,8 @@ class _ShiftDetailsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = CareScope.of(context);
+    final attendanceBlockReason = controller.attendanceBlockReason(shift);
+    final attendanceBlocked = attendanceBlockReason != null;
     return ListView(
       padding: EdgeInsets.zero,
       children: [
@@ -592,8 +594,12 @@ class _ShiftDetailsTab extends StatelessWidget {
             latitude: shift.assignedLatitude,
             longitude: shift.assignedLongitude,
             badge: StatusBadge(
-              label: _attendanceBadgeLabel(shift),
-              color: _attendanceBadgeColor(shift),
+              label: attendanceBlocked
+                  ? 'Attendance failed'
+                  : _attendanceBadgeLabel(shift),
+              color: attendanceBlocked
+                  ? const Color(0xFFC43D32)
+                  : _attendanceBadgeColor(shift),
             ),
           ),
         ),
@@ -656,7 +662,11 @@ class _ShiftDetailsTab extends StatelessWidget {
                               : Icons.login_rounded,
                         ),
                   label: Text(
-                    shift.isEnded
+                    attendanceBlocked
+                        ? shift.isCheckedIn
+                              ? 'Clock out failed'
+                              : 'Clock in failed'
+                        : shift.isEnded
                         ? 'Clocked out'
                         : shift.isCheckedIn
                         ? 'Clock out'

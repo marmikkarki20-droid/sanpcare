@@ -56,6 +56,8 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
     final ended = shift.isEnded;
     final checkingOut = checkedIn && !ended;
     final verificationPassed = activeResult?.verified ?? false;
+    final attendanceBlockReason = controller.attendanceBlockReason(shift);
+    final attendanceBlocked = attendanceBlockReason != null;
 
     return AppScaffold(
       title: 'Verify location',
@@ -69,14 +71,18 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
               latitude: shift.assignedLatitude,
               longitude: shift.assignedLongitude,
               badge: StatusBadge(
-                label: ended
+                label: attendanceBlocked
+                    ? 'Failed'
+                    : ended
                     ? 'Clocked out'
                     : checkedIn
                     ? 'Clocked in'
                     : shift.checkInStatus == 'Failed'
                     ? 'Location failed'
                     : 'Pending',
-                color: checkedIn || ended
+                color: attendanceBlocked
+                    ? const Color(0xFFC43D32)
+                    : checkedIn || ended
                     ? const Color(0xFF327A60)
                     : shift.checkInStatus == 'Failed'
                     ? const Color(0xFFC43D32)
@@ -99,6 +105,18 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
             _CheckInResultCard(
               result: activeResult,
               isCheckOut: resultWasCheckOut,
+            )
+          else if (attendanceBlocked)
+            InfoCard(
+              icon: checkingOut
+                  ? Icons.logout_outlined
+                  : Icons.event_busy_outlined,
+              title: checkingOut ? 'Clock out failed' : 'Clock in failed',
+              subtitle: attendanceBlockReason,
+              badge: const StatusBadge(
+                label: 'Failed',
+                color: Color(0xFFC43D32),
+              ),
             )
           else if (ended)
             InfoCard(
@@ -128,7 +146,10 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
             ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: controller.isBusy || (ended && !verificationPassed)
+            onPressed:
+                controller.isBusy ||
+                    attendanceBlocked ||
+                    (ended && !verificationPassed)
                 ? null
                 : verificationPassed
                 ? () => Navigator.of(context).pop(true)
@@ -152,6 +173,10 @@ class _GpsCheckInScreenState extends State<GpsCheckInScreen> {
                         : 'Continue to shift'
                   : ended
                   ? 'Clocked out'
+                  : attendanceBlocked
+                  ? checkingOut
+                        ? 'Clock out failed'
+                        : 'Clock in failed'
                   : activeResult != null
                   ? 'Check again'
                   : checkingOut

@@ -15,6 +15,7 @@ class CareController extends ChangeNotifier {
   CareController(this.repository);
 
   static const double locationVerificationRadiusMetres = 200;
+  static const Duration attendanceGracePeriod = Duration(minutes: 30);
 
   final CareRepository repository;
   AppUser? user;
@@ -223,11 +224,11 @@ class CareController extends ChangeNotifier {
     if (currentShift == null) {
       throw StateError('No shift loaded.');
     }
-    if (currentShift.isEnded) {
-      throw StateError('This shift has already ended.');
-    }
 
     return _guardWithResult(() async {
+      final blockReason = clockInBlockReason(currentShift);
+      if (blockReason != null) throw StateError(blockReason);
+
       final position = await LocationService.currentPosition();
       return _completeCheckIn(
         latitude: position.latitude,
@@ -304,14 +305,11 @@ class CareController extends ChangeNotifier {
     if (currentShift == null) {
       throw StateError('No shift loaded.');
     }
-    if (currentShift.isEnded) {
-      throw StateError('This shift has already ended.');
-    }
-    if (!currentShift.isCheckedIn) {
-      throw StateError('Start the shift before ending it.');
-    }
 
     return _guardWithResult(() async {
+      final blockReason = clockOutBlockReason(currentShift);
+      if (blockReason != null) throw StateError(blockReason);
+
       final position = await LocationService.currentPosition();
       final updatedShift = await _shiftWithAddressCoordinates(currentShift);
       final result = _verifyAssignedLocation(
@@ -353,6 +351,40 @@ class CareController extends ChangeNotifier {
       latitude: latitude,
       longitude: longitude,
     );
+  }
+
+  String? attendanceBlockReason(ShiftAssignment shift, {DateTime? at}) {
+    if (shift.isEnded) return null;
+    if (shift.isCheckedIn && !shift.isEnded) {
+      return clockOutBlockReason(shift, at: at);
+    }
+    return clockInBlockReason(shift, at: at);
+  }
+
+  String? clockInBlockReason(ShiftAssignment shift, {DateTime? at}) {
+    if (shift.isEnded) return 'This shift has already ended.';
+    if (shift.isCheckedIn) return null;
+
+    final now = at ?? DateTime.now();
+    if (_isAfterGracePeriod(now, shift.startTime)) {
+      return 'Clock in failed because the 30 minute shift window has closed.';
+    }
+    return null;
+  }
+
+  String? clockOutBlockReason(ShiftAssignment shift, {DateTime? at}) {
+    if (shift.isEnded) return 'This shift has already ended.';
+    if (!shift.isCheckedIn) return 'Start the shift before ending it.';
+
+    final now = at ?? DateTime.now();
+    if (_isAfterGracePeriod(now, shift.endTime)) {
+      return 'Clock out failed because the 30 minute shift window has closed.';
+    }
+    return null;
+  }
+
+  bool _isAfterGracePeriod(DateTime now, DateTime reference) {
+    return now.isAfter(reference.add(attendanceGracePeriod));
   }
 
   Future<void> endShift() async {
